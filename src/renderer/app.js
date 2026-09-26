@@ -3,7 +3,8 @@
  * 文本一律用 textContent 注入，绝不使用 innerHTML。
  */
 import { splitChapters } from '../shared/chapters.js';
-import { DEFAULT_SETTINGS, FONTS, FONT_STACK, MODE_LABEL, THEMES, THEME_LABEL } from '../shared/settings.js';
+import { DEFAULT_SETTINGS, FONTS, FONT_STACK, MODE_LABEL, PDF_SCALE, THEMES, THEME_LABEL } from '../shared/settings.js';
+import { PdfView } from './pdf/pdf-view.js';
 
 const api = window.api;
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -12,6 +13,7 @@ const el = {
   body: document.body,
   viewport: $('#viewport'),
   flow: $('#flow'),
+  pdfPages: $('#pdf-pages'),
   toc: $('#toc'),
   tocList: $('#toc-list'),
   tocCount: $('#toc-count'),
@@ -45,6 +47,10 @@ const el = {
 };
 
 const state = {
+  kind: 'txt', // 'txt' | 'pdf'
+  pdf: null, // PdfView 实例（kind === 'pdf' 时存在）
+  page: 0, // PDF 当前页（0 基）
+  pages: 0, // PDF 总页数
   file: null, // { path, name, size }
   text: '',
   chapters: [],
@@ -83,6 +89,13 @@ function toast(msg, isError = false) {
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const fmtNum = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万` : String(n));
 
+function fmtBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function fmtTime(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
@@ -104,6 +117,25 @@ function applySettings() {
   el.viewport.dataset.mode = s.mode;
   el.btnMode.textContent = MODE_LABEL[s.mode] ?? '翻页';
   el.btnTheme.textContent = THEME_LABEL[s.theme] ?? '护眼';
+  // PDF 视图只认翻页方式与缩放：字号/行距/版心对页面本身没有意义
+  state.pdf?.setMode(s.mode);
+  if (state.pdf) state.pdf.setScale(resolvePdfScale());
+}
+
+/** 设置里的 0 表示「适应窗口」，其余按手动比例（并夹在允许范围内） */
+function resolvePdfScale() {
+  const v = Number(state.settings.pdfScale);
+  if (!Number.isFinite(v) || v <= 0) return pdfFitScale();
+  return clamp(v, PDF_SCALE.min, PDF_SCALE.max);
+}
+
+/** 当前页在可用区域内完整显示所需的比例 */
+function pdfFitScale() {
+  if (!state.pdf) return 1;
+  const cs = getComputedStyle(el.viewport);
+  const w = el.viewport.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = el.viewport.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  return state.pdf.fitScale(w, h, state.page);
 }
 
 function syncSettingsUI() {
@@ -151,6 +183,14 @@ async function openPayload(res) {
     toast(res?.error ?? '打开失败', true);
     return;
   }
+  if (res.kind === 'pdf') return openPdf(res);
+  closePdf();
+  state.kind = 'txt';
+  state.page = 0;
+  state.pages = 0;
+  el.body.dataset.kind = 'txt';
+  el.flow.hidden = false;
+
   state.file = { path: res.path, name: res.name, size: res.size };
   state.text = res.text;
   state.chapters = splitChapters(res.text);
@@ -167,6 +207,7 @@ async function openPayload(res) {
   el.encLabel.hidden = false;
   el.encLabel.textContent = res.encoding.toUpperCase();
   el.encLabel.dataset.warn = res.warning ? '1' : '0';
+  el.encLabel.dataset.pdf = '0';
   el.encLabel.title = res.warning ? '存在无法解码的字符，可在“设置”里手动指定编码' : `编码：${res.encoding}`;
   el.encSelect.value = res.encoding;
 
@@ -177,6 +218,124 @@ async function openPayload(res) {
   if (res.warning) toast('部分字符无法解码，可在设置中切换编码', true);
   else if (res.inherited) toast(`已沿用原阅读记录（第 ${(state.book.chapterIndex ?? 0) + 1} 章）`);
   else toast('');
+}
+
+/* ================= 打开 PDF ================= */
+
+function closePdf() {
+  // 切换文档时丢弃还在跑的 PDF 查找
+  pdfSearchToken++;
+  pdfSearchBusy = false;
+  if (!state.pdf) return;
+  state.pdf.destroy();
+  state.pdf = null;
+  el.pdfPages.hidden = true;
+}
+
+function pdfErrorMessage(err) {
+  const name = err?.name ?? '';
+  const msg = String(err?.message ?? err);
+  if (name === 'PasswordException' || /password/i.test(msg)) return 'PDF 已加密，暂不支持输入密码';
+  if (name === 'InvalidPDFException') return 'PDF 无法解析（文件损坏或格式异常）';
+  return `PDF 打开失败：${msg}`;
+}
+
+async function openPdf(res) {
+  const view = new PdfView({
+    container: el.viewport,
+    strip: el.pdfPages,
+    scale: 1, // 打开后按设置（可能为「适应窗口」）再定比例
+    mode: state.settings.mode,
+  });
+  toast('正在打开 PDF…');
+  try {
+    await view.open(res.data);
+  } catch (err) {
+    view.destroy();
+    console.error('[pdf] 打开失败', err?.name ?? '', err?.message ?? err);
+    toast(pdfErrorMessage(err), true);
+    return;
+  }
+
+  closePdf();
+  state.pdf = view;
+  state.kind = 'pdf';
+  state.file = { path: res.path, name: res.name, size: res.size };
+  state.book = res.book ?? { chapterIndex: 0, ratio: 0, bookmarks: [] };
+  state.pages = view.pageCount;
+  state.page = clamp(state.book.chapterIndex ?? 0, 0, Math.max(0, view.pageCount - 1));
+  state.encoding = 'pdf';
+  state.text = '';
+  state.chapters = [];
+  state.paras = [];
+  state.wordCount = 0;
+  state.search = { query: '', matches: [], cursor: -1 };
+  el.searchInput.value = '';
+  el.searchCount.textContent = '';
+  clearHighlight();
+
+  el.body.classList.add('has-file');
+  el.body.dataset.kind = 'pdf';
+  el.fileName.textContent = res.name;
+  el.encLabel.hidden = false;
+  el.encLabel.textContent = 'PDF';
+  el.encLabel.dataset.warn = '0';
+  el.encLabel.dataset.pdf = '1';
+  el.encLabel.title = `PDF · ${fmtBytes(res.size)}`;
+  el.flow.hidden = true;
+  el.pdfPages.hidden = false;
+
+  view.onPageChange(onPdfPageChange);
+  view.setScale(resolvePdfScale());
+  view.goToPage(state.page, { silent: true });
+  renderToc();
+  renderBookmarks();
+  updateStatus();
+  if (res.inherited) toast(`已沿用原阅读记录（第 ${state.page + 1} 页）`);
+  else toast('');
+}
+
+function onPdfPageChange(page) {
+  state.page = page;
+  updateStatus();
+  scheduleSaveProgress();
+  syncTocActive();
+}
+
+/** 当前页所属的大纲项（取页号不超过当前页的最后一项） */
+function pdfTitleAt(page) {
+  const outline = state.pdf?.outline ?? [];
+  let title = '';
+  for (const item of outline) {
+    if (item.page <= page) title = item.title;
+    else break;
+  }
+  return title || `第 ${page + 1} 页`;
+}
+
+function tocIndexForPage(page) {
+  const outline = state.pdf?.outline ?? [];
+  let idx = -1;
+  for (let i = 0; i < outline.length; i++) {
+    if (outline[i].page <= page) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+function zoomPdf(delta) {
+  if (state.kind !== 'pdf' || !state.pdf) return;
+  // 从当前生效的比例（可能是适应窗口算出来的）继续缩放
+  const next = clamp(Number((state.pdf.scale + delta).toFixed(2)), PDF_SCALE.min, PDF_SCALE.max);
+  if (Math.abs(next - state.pdf.scale) < 0.001) return;
+  updateSettings({ pdfScale: next });
+  toast(`缩放 ${Math.round(next * 100)}%`);
+}
+
+function resetPdfZoom() {
+  if (state.kind !== 'pdf' || Number(state.settings.pdfScale) === PDF_SCALE.auto) return;
+  updateSettings({ pdfScale: PDF_SCALE.auto });
+  toast(`适应窗口 ${Math.round(state.pdf.scale * 100)}%`);
 }
 
 function countChars(text) {
@@ -289,6 +448,12 @@ function restoreScroll(ratio) {
 
 function relayout({ preserve = true } = {}) {
   if (!state.file) return;
+  if (state.kind === 'pdf') {
+    if (!Number(state.settings.pdfScale)) state.pdf?.setScale(resolvePdfScale());
+    state.pdf?.relayout();
+    updateStatus();
+    return;
+  }
   const ratio = preserve ? currentRatio() : 0;
   measure();
   if (state.settings.mode === 'paged') setPage(Math.round(ratio * Math.max(0, state.layout.pageCount - 1)), { silent: true });
@@ -313,6 +478,7 @@ function gotoChapter(index, ratio = 0, { save = true } = {}) {
 
 function nextPage() {
   if (!state.file) return;
+  if (state.kind === 'pdf') return state.pdf?.next();
   if (state.settings.mode === 'paged') {
     if (state.layout.page < state.layout.pageCount - 1) setPage(state.layout.page + 1);
     else nextChapter();
@@ -326,6 +492,7 @@ function nextPage() {
 
 function prevPage() {
   if (!state.file) return;
+  if (state.kind === 'pdf') return state.pdf?.prev();
   if (state.settings.mode === 'paged') {
     if (state.layout.page > 0) setPage(state.layout.page - 1);
     else prevChapter();
@@ -342,12 +509,14 @@ const atTop = () => el.viewport.scrollTop <= 4;
 
 function nextChapter() {
   if (!state.file) return;
+  if (state.kind === 'pdf') return state.pdf?.next();
   if (state.index >= state.chapters.length - 1) return toast('已经是最后一章');
   gotoChapter(state.index + 1, 0);
 }
 
 function prevChapter() {
   if (!state.file) return;
+  if (state.kind === 'pdf') return state.pdf?.prev();
   if (state.index <= 0) return toast('已经是第一章');
   gotoChapter(state.index - 1, 0);
 }
@@ -355,23 +524,40 @@ function prevChapter() {
 /* ================= 目录 ================= */
 
 function renderToc() {
+  const isPdf = state.kind === 'pdf';
+  const items = isPdf ? (state.pdf?.outline ?? []) : state.chapters;
   const frag = document.createDocumentFragment();
-  state.chapters.forEach((ch, i) => {
+  items.forEach((item, i) => {
     const li = document.createElement('li');
     li.className = 'toc-item';
     li.dataset.i = String(i);
-    li.textContent = ch.title;
-    li.title = ch.title;
+    if (isPdf) {
+      li.dataset.page = String(item.page);
+      li.style.paddingLeft = `${14 + item.depth * 12}px`;
+      li.title = `${item.title}（第 ${item.page + 1} 页）`;
+    } else {
+      li.title = item.title;
+    }
+    li.textContent = item.title;
     frag.append(li);
   });
+  if (!items.length && isPdf) {
+    const li = document.createElement('li');
+    li.className = 'muted small';
+    li.style.padding = '10px 14px';
+    li.textContent = '暂无目录（该 PDF 没有大纲）';
+    frag.append(li);
+  }
   el.tocList.replaceChildren(frag);
-  el.tocCount.textContent = `${state.chapters.length} 章`;
+  el.tocCount.textContent = isPdf ? `${items.length} 项` : `${state.chapters.length} 章`;
 }
 
 function syncTocActive() {
+  const active = state.kind === 'pdf' ? tocIndexForPage(state.page) : state.index;
   const prev = el.tocList.querySelector('.toc-item.active');
   if (prev) prev.classList.remove('active');
-  const cur = el.tocList.querySelector(`.toc-item[data-i="${state.index}"]`);
+  if (active < 0) return;
+  const cur = el.tocList.querySelector(`.toc-item[data-i="${active}"]`);
   if (cur) {
     cur.classList.add('active');
     if (!el.toc.hidden) cur.scrollIntoView({ block: 'nearest' });
@@ -390,8 +576,24 @@ function topParagraph() {
   return { paraIndex: Number.isFinite(idx) ? idx : 0, preview: (node?.textContent ?? '').slice(0, 60) };
 }
 
-function addBookmark() {
+async function addBookmark() {
   if (!state.file) return toast('请先打开文件', true);
+  if (state.kind === 'pdf') {
+    const page = state.page;
+    const text = await state.pdf.pageText(page);
+    const list = [...(state.book.bookmarks ?? [])];
+    list.push({
+      page,
+      title: pdfTitleAt(page),
+      preview: text.replace(/\s+/g, ' ').trim().slice(0, 60),
+      time: Date.now(),
+    });
+    state.book.bookmarks = list.slice(-200);
+    api.saveBookmarks(state.file.path, state.book.bookmarks);
+    renderBookmarks();
+    toast(`已添加书签（第 ${page + 1} 页）`);
+    return;
+  }
   const { paraIndex, preview } = topParagraph();
   const ch = state.chapters[state.index];
   const list = [...(state.book.bookmarks ?? [])];
@@ -460,6 +662,10 @@ function renderBookmarks() {
 }
 
 function jumpToBookmark(bm) {
+  if (state.kind === 'pdf') {
+    state.pdf?.goToPage(bm.page ?? 0);
+    return;
+  }
   gotoChapter(bm.chapterIndex ?? 0, bm.ratio ?? 0, { save: false });
   const node = el.flow.querySelector(`p[data-i="${bm.paraIndex ?? 0}"]`);
   if (!node) return;
@@ -479,8 +685,49 @@ function clearHighlight() {
   }
 }
 
+/** PDF 全文查找是异步逐页扫描的：token 丢弃过期结果，busy 区分「还在扫」与「真的没命中」 */
+let pdfSearchToken = 0;
+let pdfSearchBusy = false;
+
+async function computePdfMatches(query, firstDir) {
+  const q = (query ?? '').trim();
+  state.search = { query: q, matches: [], cursor: -1 };
+  if (!state.pdf || !q) {
+    el.searchCount.textContent = '';
+    return;
+  }
+  const token = ++pdfSearchToken;
+  pdfSearchBusy = true;
+  el.searchCount.textContent = '查找中…';
+  try {
+    const { count } = await state.pdf.search(q);
+    if (token !== pdfSearchToken) return;
+    if (!count) {
+      el.searchCount.textContent = '无结果';
+      return;
+    }
+    await pdfSearchStep(firstDir);
+  } finally {
+    if (token === pdfSearchToken) pdfSearchBusy = false;
+  }
+}
+
+async function pdfSearchStep(dir) {
+  if (!state.pdf) return;
+  const token = ++pdfSearchToken;
+  const { index, count } = await state.pdf.stepSearch(dir);
+  if (token !== pdfSearchToken) return;
+  if (!count) {
+    // 扫描还没结束就先按了 Enter：不要谎报"无结果"
+    el.searchCount.textContent = pdfSearchBusy ? '查找中…' : state.search.query ? '无结果' : '';
+    return;
+  }
+  el.searchCount.textContent = `${index + 1}/${count} 处`;
+}
+
 function computeMatches(query, firstDir = 1) {
   const q = (query ?? '').trim();
+  if (state.kind === 'pdf') return computePdfMatches(q, firstDir);
   state.search.query = q;
   state.search.matches = [];
   state.search.cursor = -1;
@@ -505,6 +752,7 @@ function computeMatches(query, firstDir = 1) {
 }
 
 function searchStep(dir) {
+  if (state.kind === 'pdf') return pdfSearchStep(dir);
   const m = state.search.matches;
   if (!m.length) {
     if (state.search.query) el.searchCount.textContent = '无结果';
@@ -589,6 +837,7 @@ function jumpToOffset(abs, len) {
 /* ================= 状态栏 / 进度 ================= */
 
 function updateStatus() {
+  if (state.kind === 'pdf') return updatePdfStatus();
   const ch = state.chapters[state.index];
   el.statusChapter.textContent = ch ? ch.title : '';
   const pct = state.text.length && ch ? (ch.bodyStart + currentRatio() * (ch.end - ch.bodyStart)) / state.text.length : 0;
@@ -600,7 +849,28 @@ function updateStatus() {
     : '';
 }
 
+function updatePdfStatus() {
+  const pages = Math.max(1, state.pages);
+  const page = clamp(state.page, 0, pages - 1);
+  const pct = ((page + 1) / pages) * 100;
+  el.statusChapter.textContent = pdfTitleAt(page);
+  el.statusProgress.textContent = `${pct.toFixed(1)}%`;
+  el.progressFill.style.width = `${pct.toFixed(2)}%`;
+  el.statusMeta.textContent = `PDF ${pages} 页 · ${fmtBytes(state.file?.size ?? 0)} · 第 ${page + 1} 页 · ${Math.round((state.pdf?.scale ?? 1) * 100)}%`;
+  el.viewport.dataset.page = String(page);
+  el.viewport.dataset.pages = String(pages);
+}
+
 function progressSnapshot() {
+  if (state.kind === 'pdf') {
+    const pages = Math.max(1, state.pages);
+    // 复用同一套持久化字段：chapterIndex 存页号，percent 存全书进度
+    return {
+      chapterIndex: state.page,
+      ratio: 0,
+      percent: Number(((state.page + 1) / pages).toFixed(4)),
+    };
+  }
   const ch = state.chapters[state.index];
   const ratio = currentRatio();
   const abs = ch ? ch.bodyStart + ratio * (ch.end - ch.bodyStart) : 0;
@@ -688,6 +958,10 @@ function handleCommand(cmd, payload) {
       });
       break;
     case 'reload':
+      if (state.kind === 'pdf') {
+        toast('PDF 原样渲染，无需按编码重新加载');
+        break;
+      }
       if (state.file) openPath(state.file.path, el.encSelect.value);
       break;
     case 'reveal':
@@ -724,7 +998,8 @@ function handleCommand(cmd, payload) {
       break;
     }
     case 'font':
-      updateSettings({ fontSize: clamp(state.settings.fontSize + (payload > 0 ? 1 : -1), 12, 40) });
+      if (state.kind === 'pdf') zoomPdf((payload > 0 ? 1 : -1) * PDF_SCALE.step);
+      else updateSettings({ fontSize: clamp(state.settings.fontSize + (payload > 0 ? 1 : -1), 12, 40) });
       break;
     case 'help':
       el.settings.hidden = false;
@@ -770,7 +1045,8 @@ function bindUI() {
   el.tocList.addEventListener('click', (e) => {
     const li = e.target.closest('.toc-item');
     if (!li) return;
-    gotoChapter(Number(li.dataset.i), 0);
+    if (state.kind === 'pdf') state.pdf?.goToPage(Number(li.dataset.page));
+    else gotoChapter(Number(li.dataset.i), 0);
     el.toc.hidden = true;
   });
 
@@ -811,6 +1087,7 @@ function bindUI() {
       el.searchInput.blur();
       clearHighlight();
       el.searchCount.textContent = '';
+      if (state.kind === 'pdf') state.pdf?.search('');
     }
   });
   $('#search-next').addEventListener('click', () => searchStep(1));
@@ -844,6 +1121,10 @@ function bindUI() {
   }, { passive: false });
 
   el.viewport.addEventListener('scroll', () => {
+    if (state.kind === 'pdf') {
+      state.pdf?.syncFromScroll();
+      return;
+    }
     if (state.settings.mode === 'scroll') {
       updateStatus();
       scheduleSaveProgress();
@@ -857,6 +1138,11 @@ function bindUI() {
       return;
     }
     if (isTypingTarget(e.target) || !state.file) return;
+    if (state.kind === 'pdf' && (e.ctrlKey || e.metaKey) && e.key === '0') {
+      e.preventDefault();
+      resetPdfZoom();
+      return;
+    }
     const paged = state.settings.mode === 'paged';
     switch (e.key) {
       case 'ArrowRight':
@@ -894,11 +1180,13 @@ function bindUI() {
         break;
       case 'Home':
         e.preventDefault();
-        gotoChapter(0, 0);
+        if (state.kind === 'pdf') state.pdf?.goToPage(0);
+        else gotoChapter(0, 0);
         break;
       case 'End':
         e.preventDefault();
-        gotoChapter(state.chapters.length - 1, 0);
+        if (state.kind === 'pdf') state.pdf?.goToPage(state.pages - 1);
+        else gotoChapter(state.chapters.length - 1, 0);
         break;
       default:
         break;

@@ -9,7 +9,11 @@ export const DEFAULT_SETTINGS = {
   fontFamily: 'system',
   contentWidth: 780,
   justify: true,
+  pdfScale: 0,
 };
+
+/** PDF 缩放：0 = 适应窗口（默认），其余为用户手动比例（Ctrl+= / Ctrl+- 每次 0.1）。 */
+export const PDF_SCALE = { min: 0.5, max: 3, step: 0.1, auto: 0 };
 
 export const THEMES = [
   { id: 'light', label: '日间' },

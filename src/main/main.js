@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ENCODINGS, decodeBuffer } from './encoding.js';
 import { buildMenu } from './menu.js';
+import { isPdfPath, readPdfFile } from './pdf.js';
 import { Store } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,9 +19,14 @@ const SRC_DIR = path.join(__dirname, '..');
 const ROOT_DIR = path.join(SRC_DIR, '..');
 const APP_SCHEME = 'app';
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
+/** pdf.js 的运行时资源（模块、worker、cmaps、标准字体、wasm）直接从 node_modules 里取。 */
+const VENDOR_PREFIX = '/vendor/pdfjs/';
+const PDFJS_DIR = path.join(ROOT_DIR, 'node_modules', 'pdfjs-dist');
+const VENDOR_MIME = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.wasm': 'application/wasm' };
 
 let store = null;
 let mainWindow = null;
+let activeKind = null;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -36,12 +42,32 @@ function registerAppProtocol() {
     } catch {
       return new Response('bad request', { status: 400 });
     }
-    const target = path.normalize(path.join(SRC_DIR, relPath.replace(/^\/+/, '')));
-    if (target !== SRC_DIR && !target.startsWith(SRC_DIR + path.sep)) {
+
+    const isVendor = relPath.startsWith(VENDOR_PREFIX);
+    const base = isVendor ? PDFJS_DIR : SRC_DIR;
+    const rel = isVendor ? relPath.slice(VENDOR_PREFIX.length) : relPath.replace(/^\/+/, '');
+    const target = path.normalize(path.join(base, rel));
+    if (target !== base && !target.startsWith(base + path.sep)) {
       return new Response('forbidden', { status: 403 });
     }
+    if (isVendor) return serveVendor(target);
     return net.fetch(pathToFileURL(target).toString());
   });
+}
+
+/** 显式给出 MIME：pdf.js 的 .mjs / .wasm 依赖正确的 Content-Type，不能靠系统文件类型推断。 */
+async function serveVendor(target) {
+  try {
+    const body = await fsp.readFile(target);
+    return new Response(body, {
+      headers: {
+        'content-type': VENDOR_MIME[path.extname(target).toLowerCase()] ?? 'application/octet-stream',
+        'cache-control': 'no-cache',
+      },
+    });
+  } catch (err) {
+    return new Response(`not found: ${err?.code ?? err}`, { status: 404 });
+  }
 }
 
 /* ---------- 窗口 ---------- */
@@ -98,6 +124,7 @@ function refreshMenu() {
       getSettings: () => store.settings,
       getRecent: () => store.recent,
       getWindow: () => mainWindow ?? undefined,
+      getActiveKind: () => activeKind,
       send: sendCommand,
     }),
   );
@@ -119,6 +146,7 @@ async function readBook(filePath, encoding) {
   const book = store.setBook(filePath, { encoding: enc, name, size: stat.size });
   refreshMenu();
   return {
+    kind: 'txt',
     path: filePath,
     name,
     size: stat.size,
@@ -133,7 +161,10 @@ async function readBook(filePath, encoding) {
 
 async function safeRead(filePath, encoding) {
   try {
-    return await readBook(filePath, encoding);
+    const payload = isPdfPath(filePath) ? await readPdfFile(filePath, { store }) : await readBook(filePath, encoding);
+    activeKind = payload.kind;
+    refreshMenu();
+    return payload;
   } catch (err) {
     const code = err?.code;
     const msg =
@@ -171,10 +202,10 @@ function fileFromArgv(argv) {
 function registerIpc() {
   ipcMain.handle('file:open-dialog', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
-      title: '打开 TXT 小说',
+      title: '打开 文本 / PDF',
       properties: ['openFile'],
       filters: [
-        { name: '文本文件', extensions: ['txt', 'text', 'log', 'md'] },
+        { name: '文本 / PDF', extensions: ['txt', 'text', 'log', 'md', 'pdf'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });

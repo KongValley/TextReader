@@ -1,9 +1,11 @@
 /** 应用菜单（中文）。所有交互都通过 IPC 命令交给渲染进程处理。 */
 import { Menu, dialog } from 'electron';
 
-export function buildMenu({ getSettings, getRecent, getWindow, send }) {
+export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, send }) {
   const s = getSettings();
   const recent = getRecent();
+  // PDF 没有「编码」概念，重新加载只对文本有意义
+  const isPdf = getActiveKind?.() === 'pdf';
 
   const recentSubmenu = recent.length
     ? [
@@ -17,8 +19,8 @@ export function buildMenu({ getSettings, getRecent, getWindow, send }) {
     {
       label: '文件',
       submenu: [
-        { label: '打开 TXT…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
-        { label: '重新加载', accelerator: 'CmdOrCtrl+R', click: () => send('reload') },
+        { label: '打开 文本 / PDF…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        { label: '重新加载', accelerator: 'CmdOrCtrl+R', enabled: !isPdf, click: () => send('reload') },
         { label: '最近打开', submenu: recentSubmenu },
         { type: 'separator' },
         { label: '在文件夹中显示', click: () => send('reveal') },
@@ -67,9 +69,10 @@ export function buildMenu({ getSettings, getRecent, getWindow, send }) {
               title: '关于',
               message: 'TXT 阅读器 1.0.0',
               detail:
-                '本地 TXT 小说阅读器\n' +
+                '本地 TXT / PDF 阅读器\n' +
                 '· 自动识别 GB18030/GBK、Big5、UTF-8、UTF-16 编码\n' +
-                '· 章节目录、书签、全文查找\n' +
+                '· 章节目录、书签、全文查找（PDF 走大纲与页号）\n' +
+                '· PDF 原样渲染（pdf.js），缩放 50%–300%\n' +
                 '· 翻页/滚动两种模式，阅读进度自动记忆',
               buttons: ['好'],
             });

@@ -8,3 +8,6 @@ Thumbs.db
 # 根目录放下的小说文件不要进版本库（test/fixtures 里的测试样本仍然照常跟踪）
 /*.txt
 /books/
+
+# 本地真实 PDF 样本：只在开发机上跑测试用，不进版本库
+/test/fixtures/sample.pdf

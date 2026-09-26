@@ -633,6 +633,111 @@ body.has-file #welcome {
   display: none;
 }
 
+/* ============ PDF ============ */
+/* 设置抽屉：文本专用项与 PDF 专用项互斥显示（未打开文件时按文本处理） */
+body:not([data-kind="pdf"]) [data-pdf-only] {
+  display: none;
+}
+body[data-kind="pdf"] [data-text-only] {
+  display: none;
+}
+.tag[data-pdf="1"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+#pdf-pages {
+  display: flex;
+  gap: 24px;
+}
+#pdf-pages[hidden] {
+  display: none;
+}
+#viewport[data-mode="paged"] #pdf-pages {
+  flex-direction: row;
+  align-items: flex-start;
+  transition: transform 0.16s ease-out;
+  will-change: transform;
+}
+#viewport[data-mode="scroll"] #pdf-pages {
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 40px;
+}
+
+.pdf-page {
+  flex: none;
+  position: relative;
+  background: #ffffff; /* PDF 页始终白底：夜间主题也不能把纸面反色 */
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.pdf-canvas {
+  display: block;
+}
+.pdf-hl {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pdf-hl-box {
+  position: absolute;
+  background: rgba(255, 198, 41, 0.42);
+  border-radius: 2px;
+}
+.pdf-hl-box.current {
+  background: rgba(255, 130, 20, 0.62);
+  box-shadow: 0 0 0 1px rgba(150, 70, 0, 0.55);
+}
+
+/* pdf.js 文本层（取自 pdf_viewer.css 的必要部分）：透明文字叠在 canvas 上，供选中与复制 */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+.textLayer ::selection {
+  background: rgba(0 0 255 / 0.25);
+  color: transparent;
+}
+
 body.dragging::after {
   content: "松开以打开文件";
   position: absolute;

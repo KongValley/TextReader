@@ -7,6 +7,20 @@ files:
   - package.json
   - src/**/*
   - "!**/*.map"
+  # pdf.js：渲染进程只用得到下面这些（其余与 test/legacy/web 安装包无关，去掉可省 ~9MB）
+  #   build/pdf.mjs                主模块（app://local/vendor/pdfjs/build/pdf.mjs）
+  #   build/pdf.worker.min.mjs     worker（GlobalWorkerOptions.workerSrc）
+  #   cmaps/ standard_fonts/ wasm/ iccs/  按需 fetch 的资源目录
+  - "!node_modules/pdfjs-dist/legacy/**"
+  - "!node_modules/pdfjs-dist/web/**"
+  - "!node_modules/pdfjs-dist/types/**"
+  - "!node_modules/pdfjs-dist/image_decoders/**"
+  - "!node_modules/pdfjs-dist/build/pdf.min.mjs"
+  - "!node_modules/pdfjs-dist/build/pdf.worker.mjs"
+  - "!node_modules/pdfjs-dist/build/pdf.sandbox*.mjs"
+  - "!node_modules/pdfjs-dist/wasm/quickjs-eval.*"
+  - "!node_modules/pdfjs-dist/CODE_OF_CONDUCT.md"
+  - "!node_modules/pdfjs-dist/README.md"
 win:
   icon: build/icon.ico
   target:

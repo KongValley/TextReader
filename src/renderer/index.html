@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'"
+      content="default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:"
     />
     <title>TXT 阅读器</title>
     <link rel="stylesheet" href="app.css" />
@@ -48,6 +48,7 @@
 
         <section id="viewport" data-mode="paged" data-page="0" data-pages="1">
           <div id="flow"></div>
+          <div id="pdf-pages" hidden></div>
         </section>
 
         <aside id="settings" class="drawer right" hidden>
@@ -73,44 +74,51 @@
               </span>
             </label>
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">字体</span>
               <select id="set-font-family"></select>
             </label>
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">字号 <b id="font-size-val"></b></span>
               <input id="set-font-size" type="range" min="12" max="40" step="1" />
             </label>
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">行距 <b id="line-height-val"></b></span>
               <input id="set-line-height" type="range" min="1.2" max="2.8" step="0.05" />
             </label>
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">字距 <b id="letter-spacing-val"></b></span>
               <input id="set-letter-spacing" type="range" min="0" max="0.12" step="0.005" />
             </label>
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">版心宽度 <b id="content-width-val"></b></span>
               <input id="set-content-width" type="range" min="480" max="1400" step="20" />
             </label>
 
-            <label class="field row">
+            <label class="field row" data-text-only>
               <span class="field-label">两端对齐</span>
               <input id="set-justify" type="checkbox" />
             </label>
 
-            <hr />
+            <hr data-text-only />
 
-            <label class="field">
+            <label class="field" data-text-only>
               <span class="field-label">文本编码</span>
               <select id="set-encoding"></select>
             </label>
-            <div class="btn-row">
+            <div class="btn-row" data-text-only>
               <button id="btn-reload" class="btn">按此编码重新加载</button>
+            </div>
+
+            <div id="pdf-hint" class="muted small" data-pdf-only>
+              PDF 原样渲染，不受字体/字号/版心设置影响；<kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> 缩放，<kbd>Ctrl</kbd>+<kbd>0</kbd> 适应窗口。
+            </div>
+
+            <div class="btn-row">
               <button id="btn-reset-settings" class="btn">恢复默认设置</button>
             </div>
 
@@ -124,8 +132,10 @@
                 <li><kbd>Ctrl</kbd>+<kbd>,</kbd> 阅读设置</li>
                 <li><kbd>←</kbd> <kbd>→</kbd> / <kbd>PgUp</kbd> <kbd>PgDn</kbd> 翻页</li>
                 <li><kbd>空格</kbd> 下一页 / 下一屏</li>
-                <li><kbd>Home</kbd> <kbd>End</kbd> 全书首 / 尾章</li>
-                <li><kbd>Ctrl</kbd>+<kbd>PageUp/PageDown</kbd> 上/下一章</li>
+                <li><kbd>Home</kbd> <kbd>End</kbd> 全书首 / 尾（PDF 为首 / 末页）</li>
+                <li><kbd>Ctrl</kbd>+<kbd>PageUp/PageDown</kbd> 上/下一章（PDF 为上/下一页）</li>
+                <li><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> TXT 字号 / PDF 缩放</li>
+                <li><kbd>Ctrl</kbd>+<kbd>0</kbd> PDF 适应窗口</li>
                 <li><kbd>F11</kbd> 全屏，<kbd>Esc</kbd> 关闭面板</li>
               </ul>
             </div>
@@ -147,13 +157,13 @@
         <div id="welcome">
           <div class="welcome-card">
             <h1>TXT 阅读器</h1>
-            <p class="muted">拖拽 txt 文件到窗口，或</p>
-            <button id="btn-open-2" class="btn primary big">打开本地 TXT 小说</button>
+            <p class="muted">拖拽 txt / pdf 文件到窗口，或</p>
+            <button id="btn-open-2" class="btn primary big">打开本地文本 / PDF</button>
             <div id="recent-block">
               <h3>最近阅读</h3>
               <div id="recent-list"></div>
             </div>
-            <p class="muted small">支持 GB18030/GBK、Big5、UTF-8、UTF-16 自动识别</p>
+            <p class="muted small">文本支持 GB18030/GBK、Big5、UTF-8、UTF-16 自动识别；PDF 原样渲染</p>
           </div>
         </div>
       </main>
