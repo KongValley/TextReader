@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="sepia" data-ready="0">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'"
+    />
+    <title>TXT 阅读器</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <div class="tb-group">
+          <button id="btn-open" class="btn primary" title="打开 TXT（Ctrl+O）">打开</button>
+          <button id="btn-toc" class="btn" title="目录（Ctrl+T）">目录</button>
+          <button id="btn-bookmarks" class="btn" title="书签列表（Ctrl+B 收藏当前页）">书签</button>
+        </div>
+        <div id="file-info">
+          <span id="file-name">未打开文件</span>
+          <span id="enc-label" class="tag" hidden></span>
+        </div>
+        <div class="tb-group">
+          <div id="search-box">
+            <input id="search-input" type="search" placeholder="查找全文（Ctrl+F）" spellcheck="false" autocomplete="off" />
+            <span id="search-count" class="muted"></span>
+            <button id="search-prev" class="btn tiny" title="上一处（Shift+Enter）">↑</button>
+            <button id="search-next" class="btn tiny" title="下一处（Enter）">↓</button>
+          </div>
+          <button id="btn-mode" class="btn" title="翻页 / 滚动">翻页</button>
+          <button id="btn-theme" class="btn" title="切换主题">护眼</button>
+          <button id="btn-settings" class="btn" title="阅读设置（Ctrl+,）">设置</button>
+        </div>
+      </header>
+
+      <main id="body">
+        <aside id="toc" class="drawer left" hidden>
+          <div class="drawer-head">
+            <span>目录</span>
+            <span class="drawer-head-right">
+              <span id="toc-count" class="muted"></span>
+              <button class="btn tiny" data-close="toc" title="关闭">×</button>
+            </span>
+          </div>
+          <ol id="toc-list" class="scroll-y"></ol>
+        </aside>
+
+        <section id="viewport" data-mode="paged" data-page="0" data-pages="1">
+          <div id="flow"></div>
+        </section>
+
+        <aside id="settings" class="drawer right" hidden>
+          <div class="drawer-head">
+            <span>阅读设置</span>
+            <button class="btn tiny" data-close="settings" title="关闭">×</button>
+          </div>
+          <div class="scroll-y settings-body">
+            <label class="field">
+              <span class="field-label">主题</span>
+              <span class="segmented" id="set-theme">
+                <button data-theme="light">日间</button>
+                <button data-theme="sepia">护眼</button>
+                <button data-theme="dark">夜间</button>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">翻页方式</span>
+              <span class="segmented" id="set-mode">
+                <button data-mode="paged">翻页</button>
+                <button data-mode="scroll">滚动</button>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">字体</span>
+              <select id="set-font-family"></select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">字号 <b id="font-size-val"></b></span>
+              <input id="set-font-size" type="range" min="12" max="40" step="1" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">行距 <b id="line-height-val"></b></span>
+              <input id="set-line-height" type="range" min="1.2" max="2.8" step="0.05" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">字距 <b id="letter-spacing-val"></b></span>
+              <input id="set-letter-spacing" type="range" min="0" max="0.12" step="0.005" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">版心宽度 <b id="content-width-val"></b></span>
+              <input id="set-content-width" type="range" min="480" max="1400" step="20" />
+            </label>
+
+            <label class="field row">
+              <span class="field-label">两端对齐</span>
+              <input id="set-justify" type="checkbox" />
+            </label>
+
+            <hr />
+
+            <label class="field">
+              <span class="field-label">文本编码</span>
+              <select id="set-encoding"></select>
+            </label>
+            <div class="btn-row">
+              <button id="btn-reload" class="btn">按此编码重新加载</button>
+              <button id="btn-reset-settings" class="btn">恢复默认设置</button>
+            </div>
+
+            <div id="shortcuts" class="shortcuts" hidden>
+              <h4>快捷键</h4>
+              <ul>
+                <li><kbd>Ctrl</kbd>+<kbd>O</kbd> 打开文件</li>
+                <li><kbd>Ctrl</kbd>+<kbd>T</kbd> 目录</li>
+                <li><kbd>Ctrl</kbd>+<kbd>F</kbd> 查找</li>
+                <li><kbd>Ctrl</kbd>+<kbd>B</kbd> 添加书签</li>
+                <li><kbd>Ctrl</kbd>+<kbd>,</kbd> 阅读设置</li>
+                <li><kbd>←</kbd> <kbd>→</kbd> / <kbd>PgUp</kbd> <kbd>PgDn</kbd> 翻页</li>
+                <li><kbd>空格</kbd> 下一页 / 下一屏</li>
+                <li><kbd>Home</kbd> <kbd>End</kbd> 全书首 / 尾章</li>
+                <li><kbd>Ctrl</kbd>+<kbd>PageUp/PageDown</kbd> 上/下一章</li>
+                <li><kbd>F11</kbd> 全屏，<kbd>Esc</kbd> 关闭面板</li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+
+        <aside id="bookmarks" class="drawer right" hidden>
+          <div class="drawer-head">
+            <span>书签</span>
+            <span class="drawer-head-right">
+              <button id="btn-add-bookmark" class="btn tiny" title="为当前位置添加书签">添加当前页</button>
+              <button id="btn-clear-bookmarks" class="btn tiny" title="清空全部">清空</button>
+              <button class="btn tiny" data-close="bookmarks" title="关闭">×</button>
+            </span>
+          </div>
+          <div id="bookmark-list" class="scroll-y"></div>
+        </aside>
+
+        <div id="welcome">
+          <div class="welcome-card">
+            <h1>TXT 阅读器</h1>
+            <p class="muted">拖拽 txt 文件到窗口，或</p>
+            <button id="btn-open-2" class="btn primary big">打开本地 TXT 小说</button>
+            <div id="recent-block">
+              <h3>最近阅读</h3>
+              <div id="recent-list"></div>
+            </div>
+            <p class="muted small">支持 GB18030/GBK、Big5、UTF-8、UTF-16 自动识别</p>
+          </div>
+        </div>
+      </main>
+
+      <footer id="statusbar">
+        <span id="status-chapter" class="ellipsis"></span>
+        <span id="status-progress"></span>
+        <span id="status-meta"></span>
+        <div id="progress-track"><i id="progress-fill"></i></div>
+      </footer>
+
+      <div id="toast" hidden></div>
+    </div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

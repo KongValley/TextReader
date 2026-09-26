@@ -1,0 +1,23 @@
+{
+  "name": "txt-novel-reader",
+  "version": "1.0.0",
+  "description": "轻量 TXT 小说阅读器（Electron）",
+  "author": "txt-reader",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "electron:install": "node node_modules/electron/install.js",
+    "test": "node --test",
+    "smoke": "node scripts/run-smoke.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  }
+}

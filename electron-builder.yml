@@ -1,0 +1,25 @@
+appId: com.txtreader.app
+productName: TXT阅读器
+directories:
+  output: dist
+  buildResources: build
+files:
+  - package.json
+  - src/**/*
+  - "!**/*.map"
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: TXT阅读器
+  artifactName: TXTReader-${version}-setup.${ext}
+portable:
+  artifactName: TXTReader-${version}-portable.${ext}
