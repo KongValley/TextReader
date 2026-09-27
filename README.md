@@ -26,6 +26,8 @@ npm install
 npm start          # 开发运行
 ```
 
+> 已构建的版本见 [Releases](https://github.com/KongValley/TextReader/releases)：`TXTReader-<版本>-setup.exe`（安装包）与 `TXTReader-<版本>-portable.exe`（便携版，Windows 10/11 x64，未做代码签名）。
+
 > npm 12 起默认拦截依赖的 install 脚本，`electron` 的二进制不会自动下载。若 `npm start` 报 “Electron failed to install correctly”，执行一次 `npm run electron:install` 即可（本仓库已下载完成，无需重复）。
 
 窗口标题栏菜单：文件 / 阅读 / 视图 / 帮助。
