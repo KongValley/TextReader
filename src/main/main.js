@@ -10,6 +10,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ENCODINGS, decodeBuffer } from './encoding.js';
+import { listSystemFonts } from './fonts.js';
 import { buildMenu } from './menu.js';
 import { isPdfPath, readPdfFile } from './pdf.js';
 import { Store } from './store.js';
@@ -260,6 +261,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('app:encodings', () => ENCODINGS);
+
+  ipcMain.handle('app:fonts', () => listSystemFonts());
 
   ipcMain.handle('state:get', () => ({
     settings: store.settings,

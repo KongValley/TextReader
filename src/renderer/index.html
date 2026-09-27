@@ -64,8 +64,48 @@
                 <button data-theme="sepia">护眼</button>
                 <button data-theme="dark">夜间</button>
                 <button data-theme="moss">墨绿</button>
+                <button data-theme="custom">自定义</button>
               </span>
             </label>
+
+            <div id="custom-theme-editor" hidden>
+              <div class="field">
+                <span class="field-label">自定义基座</span>
+                <select id="set-custom-base">
+                  <option value="light">日间</option>
+                  <option value="sepia">护眼</option>
+                  <option value="dark">夜间</option>
+                  <option value="moss">墨绿</option>
+                </select>
+              </div>
+              <label class="field row">
+                <span class="field-label">背景</span>
+                <input type="color" data-var="--bg" />
+              </label>
+              <label class="field row">
+                <span class="field-label">正文</span>
+                <input type="color" data-var="--fg" />
+              </label>
+              <label class="field row">
+                <span class="field-label">次级文字</span>
+                <input type="color" data-var="--fg-soft" />
+              </label>
+              <label class="field row">
+                <span class="field-label">面板</span>
+                <input type="color" data-var="--panel" />
+              </label>
+              <label class="field row">
+                <span class="field-label">强调</span>
+                <input type="color" data-var="--accent" />
+              </label>
+              <label class="field row">
+                <span class="field-label">高亮</span>
+                <input type="color" data-var="--hl" />
+              </label>
+              <div class="btn-row">
+                <button id="btn-custom-reset" class="btn">清除自定义配色</button>
+              </div>
+            </div>
 
             <label class="field">
               <span class="field-label">翻页方式</span>
@@ -76,9 +116,16 @@
             </label>
 
             <label class="field" data-text-only>
-              <span class="field-label">字体</span>
-              <select id="set-font-family"></select>
+              <span class="field-label">中文字体</span>
+              <input id="set-font-family" type="text" list="font-list" placeholder="系统默认" spellcheck="false" autocomplete="off" />
             </label>
+
+            <label class="field" data-text-only>
+              <span class="field-label">英文字体</span>
+              <input id="set-font-latin" type="text" list="font-list" placeholder="系统默认" spellcheck="false" autocomplete="off" />
+            </label>
+
+            <datalist id="font-list"></datalist>
 
             <label class="field" data-text-only>
               <span class="field-label">字号 <b id="font-size-val"></b></span>

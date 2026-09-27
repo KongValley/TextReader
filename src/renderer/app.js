@@ -3,7 +3,7 @@
  * 文本一律用 textContent 注入，绝不使用 innerHTML。
  */
 import { splitChapters } from '../shared/chapters.js';
-import { DEFAULT_SETTINGS, FONTS, FONT_STACK, MODE_LABEL, PDF_SCALE, THEMES, THEME_LABEL } from '../shared/settings.js';
+import { CUSTOM_THEME_VARS, DEFAULT_SETTINGS, FALLBACK_FONT_STACK, MODE_LABEL, PDF_SCALE, THEMES, THEME_BASE_IDS, THEME_LABEL, isHexColor, migrateFontKeys, resolveCustomBase, splitFontStack } from '../shared/settings.js';
 import { PASSWORD_INCORRECT, PdfView } from './pdf/pdf-view.js';
 
 const api = window.api;
@@ -37,7 +37,13 @@ const el = {
   searchCount: $('#search-count'),
   btnMode: $('#btn-mode'),
   btnTheme: $('#btn-theme'),
-  fontSelect: $('#set-font-family'),
+  fontCjkInput: $('#set-font-family'),
+  fontLatinInput: $('#set-font-latin'),
+  fontList: $('#font-list'),
+  customThemeEditor: $('#custom-theme-editor'),
+  customBaseSelect: $('#set-custom-base'),
+  customColorInputs: document.querySelectorAll('#custom-theme-editor input[type="color"][data-var]'),
+  customReset: $('#btn-custom-reset'),
   encSelect: $('#set-encoding'),
   fontSize: $('#set-font-size'),
   fontSizeVal: $('#font-size-val'),
@@ -112,11 +118,21 @@ function fmtTime(ts) {
 function applySettings() {
   const s = state.settings;
   const root = document.documentElement;
-  root.dataset.theme = s.theme;
+  if (s.theme === 'custom') {
+    root.dataset.theme = resolveCustomBase(s.customThemeBase);
+    for (const { var: v } of CUSTOM_THEME_VARS) {
+      const c = s.customThemeColors?.[v];
+      if (isHexColor(c)) root.style.setProperty(v, c);
+      else root.style.removeProperty(v); /* 未覆盖 → 清除内联覆盖，跟随基座 CSS 块 */
+    }
+  } else {
+    root.dataset.theme = s.theme;
+    for (const { var: v } of CUSTOM_THEME_VARS) root.style.removeProperty(v);
+  }
   root.style.setProperty('--font-size', `${s.fontSize}px`);
   root.style.setProperty('--line-height', String(s.lineHeight));
   root.style.setProperty('--letter-spacing', `${s.letterSpacing}em`);
-  root.style.setProperty('--reading-font', FONT_STACK[s.fontFamily] ?? FONT_STACK.system);
+  root.style.setProperty('--reading-font', splitFontStack({ latin: s.fontLatin, cjk: s.fontCjk }) ?? FALLBACK_FONT_STACK);
   root.style.setProperty('--content-width', `${s.contentWidth}px`);
   root.style.setProperty('--align', s.justify ? 'justify' : 'start');
   el.viewport.dataset.mode = s.mode;
@@ -147,7 +163,8 @@ function syncSettingsUI() {
   const s = state.settings;
   for (const b of el.settings.querySelectorAll('#set-theme button')) b.classList.toggle('active', b.dataset.theme === s.theme);
   for (const b of el.settings.querySelectorAll('#set-mode button')) b.classList.toggle('active', b.dataset.mode === s.mode);
-  el.fontSelect.value = s.fontFamily;
+  el.fontCjkInput.value = s.fontCjk ?? '';
+  el.fontLatinInput.value = s.fontLatin ?? '';
   el.fontSize.value = String(s.fontSize);
   el.fontSizeVal.textContent = `${s.fontSize}px`;
   el.lineHeight.value = String(s.lineHeight);
@@ -157,6 +174,17 @@ function syncSettingsUI() {
   el.contentWidth.value = String(s.contentWidth);
   el.contentWidthVal.textContent = `${s.contentWidth}px`;
   el.justify.checked = !!s.justify;
+  el.customThemeEditor.hidden = s.theme !== 'custom';
+  if (s.theme === 'custom') {
+    el.customBaseSelect.value = resolveCustomBase(s.customThemeBase);
+    const cs = getComputedStyle(document.documentElement);
+    for (const input of el.customColorInputs) {
+      const v = input.dataset.var;
+      const override = s.customThemeColors?.[v];
+      const fromCss = cs.getPropertyValue(v).trim();
+      input.value = (isHexColor(override) ? override : isHexColor(fromCss) ? fromCss : '#000000').toLowerCase();
+    }
+  }
 }
 
 function updateSettings(patch, { relayoutNow = true } = {}) {
@@ -1120,13 +1148,27 @@ function bindUI() {
 
   el.settings.querySelector('#set-theme').addEventListener('click', (e) => {
     const b = e.target.closest('[data-theme]');
-    if (b) updateSettings({ theme: b.dataset.theme });
+    if (!b) return;
+    if (b.dataset.theme === 'custom' && !THEME_BASE_IDS.includes(state.settings.customThemeBase)) {
+      // 首次切入自定义：拿当前主题做基座复制一版
+      updateSettings({ theme: 'custom', customThemeBase: THEME_BASE_IDS.includes(state.settings.theme) ? state.settings.theme : 'sepia' });
+    } else {
+      updateSettings({ theme: b.dataset.theme });
+    }
   });
   el.settings.querySelector('#set-mode').addEventListener('click', (e) => {
     const b = e.target.closest('[data-mode]');
     if (b) updateSettings({ mode: b.dataset.mode });
   });
-  el.fontSelect.addEventListener('change', () => updateSettings({ fontFamily: el.fontSelect.value }));
+  el.fontCjkInput.addEventListener('change', () => updateSettings({ fontCjk: el.fontCjkInput.value }));
+  el.fontLatinInput.addEventListener('change', () => updateSettings({ fontLatin: el.fontLatinInput.value }));
+  el.customBaseSelect.addEventListener('change', () => updateSettings({ customThemeBase: el.customBaseSelect.value }, { relayoutNow: false }));
+  for (const input of el.customColorInputs) {
+    input.addEventListener('input', () =>
+      updateSettings({ customThemeColors: { ...state.settings.customThemeColors, [input.dataset.var]: input.value } }, { relayoutNow: false }),
+    );
+  }
+  el.customReset.addEventListener('click', () => updateSettings({ customThemeColors: {} }, { relayoutNow: false }));
   el.fontSize.addEventListener('input', () => updateSettings({ fontSize: Number(el.fontSize.value) }, { relayoutNow: false }));
   el.fontSize.addEventListener('change', () => relayout({ preserve: true }));
   el.lineHeight.addEventListener('input', () => updateSettings({ lineHeight: Number(el.lineHeight.value) }, { relayoutNow: false }));
@@ -1303,11 +1345,22 @@ async function init() {
   if (st?.settings) Object.assign(state.settings, st.settings);
   state.recent = st?.recent ?? [];
 
-  for (const f of FONTS) {
-    const opt = document.createElement('option');
-    opt.value = f.id;
-    opt.textContent = f.label;
-    el.fontSelect.append(opt);
+  // 旧存档一次性迁移 fontFamily/customFontName → fontCjk/fontLatin
+  const mig = migrateFontKeys(st?.settings);
+  if (mig) {
+    Object.assign(state.settings, mig);
+    await api.saveSettings(mig);
+  }
+  // 系统字体枚举 → 共享 datalist（失败则空列表，输入仍可用）
+  try {
+    const fonts = await api.listFonts();
+    for (const f of fonts) {
+      const opt = document.createElement('option');
+      opt.value = f;
+      el.fontList.append(opt);
+    }
+  } catch {
+    /* 枚举失败仅损失候选列表 */
   }
   const encs = st?.encodings ?? (await api.encodings());
   for (const e of encs) {

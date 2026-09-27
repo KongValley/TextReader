@@ -49,6 +49,7 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
         { label: '护眼', type: 'radio', checked: s.theme === 'sepia', click: () => send('theme', 'sepia') },
         { label: '夜间', type: 'radio', checked: s.theme === 'dark', click: () => send('theme', 'dark') },
         { label: '墨绿', type: 'radio', checked: s.theme === 'moss', click: () => send('theme', 'moss') },
+        { label: '自定义', type: 'radio', checked: s.theme === 'custom', click: () => send('theme', 'custom') },
         { type: 'separator' },
         { label: '放大字号', accelerator: 'CmdOrCtrl+=', click: () => send('font', 1) },
         { label: '缩小字号', accelerator: 'CmdOrCtrl+-', click: () => send('font', -1) },

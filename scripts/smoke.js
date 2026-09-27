@@ -177,9 +177,9 @@ export async function runSmoke(ctx) {
     check('切换到滚动模式', (await attr('#viewport', 'mode')) === 'scroll');
     await shot('08-scroll-dark.png');
 
-    /* 主题四选一：新增「墨绿」预设（设置面板按钮 + 视图菜单） */
+    /* 主题：新增「墨绿」预设（设置面板按钮 + 视图菜单） */
     const themeBtnCount = await js(`document.querySelectorAll('#set-theme button').length`);
-    check('主题按钮是四选一', themeBtnCount === 4, `${themeBtnCount} 个`);
+    check('主题按钮是五选一', themeBtnCount === 5, `${themeBtnCount} 个`);
     check('墨绿主题按钮已提供', await js(`Boolean(document.querySelector('#set-theme [data-theme="moss"]'))`));
     await click('#set-theme [data-theme="moss"]', 400);
     check(
@@ -604,6 +604,64 @@ export async function runSmoke(ctx) {
     menuClick('检查更新…');
     await sleep(600);
     check('检查失败时给出错误提示', hasMarker('dialog=error'), markersSoFar());
+
+    /* ---------- 场景 15：自定义主题 / 自定义字体 ---------- */
+    check('重新打开 GBK 文件（自定义主题/字体）', await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`));
+    await sleep(500);
+    await click('#btn-settings', 350);
+
+    await click('#set-theme [data-theme="custom"]', 400);
+    check(
+      '自定义编辑器随主题切换显示',
+      await js(`!document.querySelector('#custom-theme-editor').hidden && getComputedStyle(document.querySelector('#custom-theme-editor')).display !== 'none'`),
+    );
+    check('首次切入自定义以当前主题为基座', (await js(`document.documentElement.dataset.theme`)) === 'sepia', await js(`document.documentElement.dataset.theme`));
+    await js(`(() => { const s = document.querySelector('#set-custom-base'); s.value = 'moss'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(350);
+    check('基座切换为墨绿', (await js(`document.documentElement.dataset.theme`)) === 'moss');
+    await js(`(() => { const i = document.querySelector('#custom-theme-editor input[data-var="--bg"]'); i.value = '#123456'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await sleep(350);
+    check(
+      '自定义背景色生效',
+      (await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)) === '#123456' &&
+        (await js(`getComputedStyle(document.body).backgroundColor`)) === 'rgb(18, 52, 86)',
+      `--bg=${await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg')`)} / body=${await js(`getComputedStyle(document.body).backgroundColor`)}`,
+    );
+    await shot('29-custom-theme.png');
+    await click('#btn-custom-reset', 350);
+    check('清除自定义配色后跟随基座', (await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`)) === '#1e2a20', await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg')`));
+
+    check('菜单提供自定义主题项', menuClick('自定义'));
+    await sleep(350);
+
+    await js(`(() => { const i = document.querySelector('#set-font-family'); i.value = '霞鹜文楷;江"湖,'; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(300);
+    check(
+      '自定义中文字体净化后写入字体栈',
+      (await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font')`)).includes('"霞鹜文楷江湖"'),
+      await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font')`),
+    );
+    await js(`(() => { const i = document.querySelector('#set-font-latin'); i.value = 'Arial'; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(300);
+    check(
+      '中/英文字体分开后拉丁排在中文前',
+      await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font').trim() === '"Arial", "霞鹜文楷江湖", "Microsoft YaHei", system-ui, sans-serif'`),
+      await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font')`),
+    );
+    check('字体列表枚举出系统字体', (await js(`document.querySelectorAll('#font-list option').length`)) > 10, `${await js(`document.querySelectorAll('#font-list option').length`)} 个`);
+    check('字库列表能按子串搜到微软雅黑', await js(`Array.from(document.querySelectorAll('#font-list option')).some((o) => o.value.includes('Microsoft YaHei'))`));
+    await js(`(() => { const c = document.querySelector('#set-font-family'); c.value = ''; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(200);
+    await js(`(() => { const l = document.querySelector('#set-font-latin'); l.value = ''; l.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(200);
+    check(
+      '字体清空后回默认栈',
+      await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font').trim() === 'system-ui, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'`),
+      await js(`getComputedStyle(document.documentElement).getPropertyValue('--reading-font')`),
+    );
+    check('字体切换后分页仍正常', Number(await attr('#viewport', 'pages')) > 0, `${await attr('#viewport', 'pages')} 页`);
+    await click('#set-theme [data-theme="sepia"]', 250);
+    await click('#settings [data-close]', 200);
   } catch (err) {
     check('冒烟测试异常', false, String(err?.stack ?? err));
   } finally {

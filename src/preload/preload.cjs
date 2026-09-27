@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   clearRecent: () => ipcRenderer.invoke('state:clear-recent'),
   reveal: (path) => ipcRenderer.invoke('file:reveal', path),
   encodings: () => ipcRenderer.invoke('app:encodings'),
+  listFonts: () => ipcRenderer.invoke('app:fonts'),
   droppedPath: (file) => {
     try {
       return webUtils.getPathForFile(file);

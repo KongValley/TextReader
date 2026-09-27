@@ -413,6 +413,38 @@ select {
   color: var(--fg);
   font-size: 13px;
 }
+#custom-theme-editor {
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+#custom-theme-editor .field {
+  margin-bottom: 8px;
+}
+#custom-theme-editor input[type='color'] {
+  width: 46px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+#custom-theme-editor[hidden] {
+  display: none; /* [hidden] 的 UA 规则会被 .field{display:block} 覆盖，必须显式 */
+}
+#set-font-family,
+#set-font-latin {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+}
 .segmented {
   display: flex;
   border: 1px solid var(--border);
