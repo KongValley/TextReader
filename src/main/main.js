@@ -13,6 +13,7 @@ import { ENCODINGS, decodeBuffer } from './encoding.js';
 import { buildMenu } from './menu.js';
 import { isPdfPath, readPdfFile } from './pdf.js';
 import { Store } from './store.js';
+import { checkForUpdates } from './updater.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.join(__dirname, '..');
@@ -23,6 +24,10 @@ const MAX_FILE_BYTES = 256 * 1024 * 1024;
 const VENDOR_PREFIX = '/vendor/pdfjs/';
 const PDFJS_DIR = path.join(ROOT_DIR, 'node_modules', 'pdfjs-dist');
 const VENDOR_MIME = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.wasm': 'application/wasm' };
+
+/** 检查更新（手动，帮助 > 检查更新…）：只读 GitHub Releases API；应用其余时间完全离线。 */
+const RELEASES_URL = 'https://api.github.com/repos/KongValley/TextReader/releases/latest';
+const updateLogMarkers = [];
 
 let store = null;
 let mainWindow = null;
@@ -126,8 +131,40 @@ function refreshMenu() {
       getWindow: () => mainWindow ?? undefined,
       getActiveKind: () => activeKind,
       send: sendCommand,
+      checkUpdate: runUpdateCheck,
     }),
   );
+}
+
+async function fetchReleaseJson() {
+  // 测试钩子：设定 TXT_UPDATE_FAKE 时直接用伪造响应（相同接口的另一实现），不发真实网络请求
+  if (process.env.TXT_UPDATE_FAKE !== undefined) return JSON.parse(process.env.TXT_UPDATE_FAKE);
+  const res = await net.fetch(RELEASES_URL, {
+    headers: { 'User-Agent': 'TXT-Reader-Update-Check', Accept: 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function runUpdateCheck() {
+  updateLogMarkers.length = 0; // 每次检查只留本轮标记（手动触发，频率低）
+  const smoke = Boolean(process.env.TXT_SMOKE);
+  void checkForUpdates({
+    currentVersion: app.getVersion(),
+    fetchJson: fetchReleaseJson,
+    showDialog: smoke
+      ? async (opts) => {
+          updateLogMarkers.push(`dialog-shown title=${opts.title} buttons=${(opts.buttons ?? []).join('|')}`);
+          return 0;
+        }
+      : async (opts) => (await dialog.showMessageBox(mainWindow ?? undefined, opts)).response,
+    openExternal: smoke ? (url) => updateLogMarkers.push(`open-external=${url}`) : (url) => shell.openExternal(url),
+    log: (line) => {
+      updateLogMarkers.push(line);
+      console.log(line);
+    },
+  });
 }
 
 /* ---------- 打开文件 ---------- */
@@ -302,7 +339,7 @@ export async function bootstrap() {
 async function runSmokeHook(win) {
   try {
     const mod = await import(pathToFileURL(path.join(ROOT_DIR, 'scripts', 'smoke.js')).href);
-    await mod.runSmoke({ app, win, store, openFile: (p, enc) => openPathInWindow(win, p, enc) });
+    await mod.runSmoke({ app, win, store, openFile: (p, enc) => openPathInWindow(win, p, enc), updateMarkers: updateLogMarkers });
   } catch (err) {
     console.error('[smoke] 失败:', err);
     app.exit(3);

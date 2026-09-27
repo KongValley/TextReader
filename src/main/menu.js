@@ -1,7 +1,7 @@
 /** 应用菜单（中文）。所有交互都通过 IPC 命令交给渲染进程处理。 */
 import { Menu, dialog } from 'electron';
 
-export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, send }) {
+export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, send, checkUpdate }) {
   const s = getSettings();
   const recent = getRecent();
   // PDF 没有「编码」概念，重新加载只对文本有意义
@@ -61,6 +61,8 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
     {
       label: '帮助',
       submenu: [
+        { label: '检查更新…', click: () => checkUpdate() },
+        { type: 'separator' },
         { label: '快捷键', click: () => send('help') },
         {
           label: '关于',

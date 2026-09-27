@@ -16,7 +16,7 @@ const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function runSmoke(ctx) {
-  const { app, win, openFile } = ctx;
+  const { app, win, openFile, updateMarkers } = ctx;
   fs.mkdirSync(SHOTS, { recursive: true });
 
   const results = [];
@@ -574,6 +574,36 @@ export async function runSmoke(ctx) {
       return first === 0 && second === 1 && canvases >= 1;
     })(), `page=${await attr('#viewport', 'page')}`);
     await shot('28-pdf-broken.png');
+
+    /* ---------- 场景 14：检查更新（TXT_UPDATE_FAKE 假响应，不走真实网络） ---------- */
+    const fakeRelease = (payload) => { process.env.TXT_UPDATE_FAKE = payload; };
+    const hasMarker = (frag) => (updateMarkers ?? []).some((m) => m.includes(frag));
+    const markersSoFar = () => (updateMarkers ?? []).join(' / ');
+
+    delete process.env.TXT_UPDATE_FAKE; // 先清零旧值再进入场景
+    fakeRelease(JSON.stringify({
+      tag_name: 'v9.9.9',
+      html_url: 'https://example.test/releases/tag/v9.9.9',
+      body: '修复若干问题',
+      assets: [
+        { name: 'TXTReader-9.9.9-portable.exe', browser_download_url: 'https://example.test/TXTReader-9.9.9-portable.exe' },
+        { name: 'TXTReader-9.9.9-setup.exe', browser_download_url: 'https://example.test/TXTReader-9.9.9-setup.exe' },
+      ],
+    }));
+    check('菜单「检查更新…」可触发', menuClick('检查更新…'));
+    await sleep(600);
+    check('识别到新版本并弹出新版本对话框', hasMarker('dialog=update-available latest=v9.9.9'), markersSoFar());
+    check('「下载更新」打开 setup.exe 直链', hasMarker('open-external=https://example.test/TXTReader-9.9.9-setup.exe'), markersSoFar());
+
+    fakeRelease(JSON.stringify({ tag_name: `v${app.getVersion()}`, html_url: 'https://example.test/releases', body: '', assets: [] }));
+    menuClick('检查更新…');
+    await sleep(600);
+    check('当前已是最新时提示已是最新', hasMarker('dialog=up-to-date'), markersSoFar());
+
+    fakeRelease('{ broken json');
+    menuClick('检查更新…');
+    await sleep(600);
+    check('检查失败时给出错误提示', hasMarker('dialog=error'), markersSoFar());
   } catch (err) {
     check('冒烟测试异常', false, String(err?.stack ?? err));
   } finally {
