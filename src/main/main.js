@@ -9,12 +9,15 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import updaterPkg from 'electron-updater';
 import { ENCODINGS, decodeBuffer } from './encoding.js';
 import { listSystemFonts } from './fonts.js';
 import { buildMenu } from './menu.js';
 import { isPdfPath, readPdfFile } from './pdf.js';
 import { Store } from './store.js';
 import { checkForUpdates } from './updater.js';
+
+const { autoUpdater } = updaterPkg;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.join(__dirname, '..');
@@ -148,7 +151,7 @@ async function fetchReleaseJson() {
   return res.json();
 }
 
-function runUpdateCheck() {
+function runLegacyUpdateCheck() {
   updateLogMarkers.length = 0; // 每次检查只留本轮标记（手动触发，频率低）
   const smoke = Boolean(process.env.TXT_SMOKE);
   void checkForUpdates({
@@ -166,6 +169,92 @@ function runUpdateCheck() {
       console.log(line);
     },
   });
+}
+
+/** 统一的中文提示框（冒烟模式下只记标记，不弹真窗）。 */
+function showUpdateDialog(title, message, detail = '') {
+  if (process.env.TXT_SMOKE) {
+    updateLogMarkers.push(`dialog-shown title=${title} buttons=好`);
+    return Promise.resolve();
+  }
+  return dialog
+    .showMessageBox(mainWindow ?? undefined, { type: 'info', title, message, detail, buttons: ['好'], defaultId: 0, cancelId: 0 })
+    .then(() => {});
+}
+
+/** 更新检查失败提示（冒烟模式下只记标记，不弹真窗）。 */
+function showUpdateError(err) {
+  if (process.env.TXT_SMOKE) {
+    updateLogMarkers.push('dialog-shown title=检查更新 buttons=好');
+    return Promise.resolve();
+  }
+  return dialog
+    .showMessageBox(mainWindow ?? undefined, {
+      type: 'warning',
+      title: '检查更新',
+      message: '无法检查更新',
+      detail: `原因：${String(err?.message ?? err)}\n\n可稍后重试，或手动访问 https://github.com/KongValley/TextReader/releases 查看。`,
+      buttons: ['好'],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    .then(() => {});
+}
+
+let packagedUpdaterInited = false;
+let manualMode = false;
+
+function initPackagedUpdater() {
+  if (packagedUpdaterInited) return;
+  packagedUpdaterInited = true;
+  autoUpdater.autoDownload = true;
+  autoUpdater.on('update-available', (info) => {
+    updateLogMarkers.push(`[update] downloading version=${info.version}`);
+    if (manualMode) void showUpdateDialog('发现新版本', `发现新版本 ${info.version}，正在后台下载…`);
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    updateLogMarkers.push(`[update] dialog=up-to-date latest=${info?.version ?? ''}`);
+    if (manualMode) void showUpdateDialog('检查更新', `当前已是最新版本 v${app.getVersion()}`, `服务器最新版本 ${String(info?.version ?? '')}`);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    void dialog
+      .showMessageBox(mainWindow ?? undefined, {
+        type: 'question',
+        message: `${info.version} 已下载完成，是否重启应用完成安装？`,
+        buttons: ['重启安装', '稍后'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        updateLogMarkers.push(`[update] restart-choice=${response}`);
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+  autoUpdater.on('error', (err) => {
+    updateLogMarkers.push(`[update] dialog=error reason=${String(err?.message ?? err)}`);
+    if (manualMode) void showUpdateError(err);
+  });
+}
+
+async function runUpdateCheck(manual = true) {
+  updateLogMarkers.length = 0;
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    runLegacyUpdateCheck(); // 便携版：既有浏览器直链手动流程
+    return;
+  }
+  manualMode = manual;
+  initPackagedUpdater();
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    if (res === null) {
+      // 应用未打包（开发环境）时 electron-updater 静默跳过，这里补提示与标记
+      updateLogMarkers.push('[update] dialog=error reason=not-packaged');
+      if (manual) void showUpdateError(new Error('应用未打包（开发环境），未执行更新检查'));
+    }
+  } catch (err) {
+    updateLogMarkers.push(`[update] dialog=error reason=${String(err?.message ?? err)}`);
+    if (manual) void showUpdateError(err);
+  }
 }
 
 /* ---------- 打开文件 ---------- */
@@ -318,6 +407,20 @@ export async function bootstrap() {
 
   mainWindow = createWindow();
   refreshMenu();
+
+  if (!process.env.TXT_SMOKE && !process.env.PORTABLE_EXECUTABLE_DIR && app.isPackaged) {
+    setTimeout(() => {
+      void (async () => {
+        manualMode = false; // 自动检查：不弹窗，失败静默
+        initPackagedUpdater();
+        try {
+          await autoUpdater.checkForUpdates();
+        } catch {
+          /* 静默 */
+        }
+      })();
+    }, 10000);
+  }
 
   const pending = fileFromArgv(process.argv);
   mainWindow.webContents.once('did-finish-load', () => {

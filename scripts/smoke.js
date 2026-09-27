@@ -576,6 +576,7 @@ export async function runSmoke(ctx) {
     await shot('28-pdf-broken.png');
 
     /* ---------- 场景 14：检查更新（TXT_UPDATE_FAKE 假响应，不走真实网络） ---------- */
+    process.env.PORTABLE_EXECUTABLE_DIR = '1'; // 本场景走便携版分派（fake 响应浏览器流程）
     const fakeRelease = (payload) => { process.env.TXT_UPDATE_FAKE = payload; };
     const hasMarker = (frag) => (updateMarkers ?? []).some((m) => m.includes(frag));
     const markersSoFar = () => (updateMarkers ?? []).join(' / ');
@@ -604,6 +605,12 @@ export async function runSmoke(ctx) {
     menuClick('检查更新…');
     await sleep(600);
     check('检查失败时给出错误提示', hasMarker('dialog=error'), markersSoFar());
+
+    delete process.env.PORTABLE_EXECUTABLE_DIR; // 切回已安装分派（electron-updater 通道）
+    delete process.env.TXT_UPDATE_FAKE; // 不再吃 fake
+    menuClick('检查更新…');
+    await sleep(500);
+    check('已安装分支走 electron-updater 通道（打包外落入错误分支）', hasMarker('dialog=error'), markersSoFar());
 
     /* ---------- 场景 15：自定义主题 / 自定义字体 ---------- */
     check('重新打开 GBK 文件（自定义主题/字体）', await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`));

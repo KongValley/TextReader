@@ -1,5 +1,9 @@
 appId: com.txtreader.app
 productName: TXT阅读器
+publish:
+  provider: github
+  owner: KongValley
+  repo: TextReader
 directories:
   output: dist
   buildResources: build
