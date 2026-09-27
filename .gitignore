@@ -11,3 +11,9 @@ Thumbs.db
 
 # 本地真实 PDF 样本：只在开发机上跑测试用，不进版本库
 /test/fixtures/sample.pdf
+
+# 代码签名证书与备份密钥：绝对不能进版本库
+*.pfx
+*.p12
+*.pem
+*.key
