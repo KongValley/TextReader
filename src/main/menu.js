@@ -1,5 +1,5 @@
 /** 应用菜单（中文）。所有交互都通过 IPC 命令交给渲染进程处理。 */
-import { Menu, dialog } from 'electron';
+import { app, Menu, dialog } from 'electron';
 
 export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, send, checkUpdate }) {
   const s = getSettings();
@@ -70,7 +70,7 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
             dialog.showMessageBox(getWindow(), {
               type: 'info',
               title: '关于',
-              message: 'TXT 阅读器 1.0.0',
+              message: `TXT 阅读器 ${app.getVersion()}`,
               detail:
                 '本地 TXT / PDF 阅读器\n' +
                 '· 自动识别 GB18030/GBK、Big5、UTF-8、UTF-16 编码\n' +

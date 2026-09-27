@@ -52,7 +52,7 @@ npm start          # 开发运行
 
 ```bash
 npm run pack       # 免安装目录：dist/win-unpacked/
-npm run dist       # 安装包 + 便携版：dist/TXTReader-1.0.0-setup.exe、TXTReader-1.0.0-portable.exe
+npm run dist       # 安装包 + 便携版：dist/TXTReader-<版本>-setup.exe、TXTReader-<版本>-portable.exe
 npm run icon       # 重新生成 build/icon.png 与 build/icon.ico（纯 Node，无第三方依赖）
 ```
 
