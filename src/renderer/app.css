@@ -47,6 +47,20 @@ html[data-theme="dark"] {
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
+html[data-theme="moss"] {
+  --bg: #1e2a20;
+  --fg: #ebe4cf;
+  --fg-soft: #b7bfa8;
+  --muted: #8a9584;
+  --panel: #263526;
+  --panel-2: #2f4534;
+  --border: #3c5042;
+  --accent: #8fbf6f;
+  --accent-fg: #16220f;
+  --hl: #c9b458;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
 /* ============ 基础 ============ */
 * {
   box-sizing: border-box;

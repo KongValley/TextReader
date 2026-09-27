@@ -19,6 +19,7 @@ export const THEMES = [
   { id: 'light', label: '日间' },
   { id: 'sepia', label: '护眼' },
   { id: 'dark', label: '夜间' },
+  { id: 'moss', label: '墨绿' },
 ];
 
 export const THEME_LABEL = Object.fromEntries(THEMES.map((t) => [t.id, t.label]));

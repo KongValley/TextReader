@@ -177,6 +177,26 @@ export async function runSmoke(ctx) {
     check('切换到滚动模式', (await attr('#viewport', 'mode')) === 'scroll');
     await shot('08-scroll-dark.png');
 
+    /* 主题四选一：新增「墨绿」预设（设置面板按钮 + 视图菜单） */
+    const themeBtnCount = await js(`document.querySelectorAll('#set-theme button').length`);
+    check('主题按钮是四选一', themeBtnCount === 4, `${themeBtnCount} 个`);
+    check('墨绿主题按钮已提供', await js(`Boolean(document.querySelector('#set-theme [data-theme="moss"]'))`));
+    await click('#set-theme [data-theme="moss"]', 400);
+    check(
+      '墨绿主题生效',
+      await js(`document.documentElement.dataset.theme === 'moss' && getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() === '#1e2a20' && getComputedStyle(document.body).backgroundColor === 'rgb(30, 42, 32)'`),
+      `--bg=${await js(`getComputedStyle(document.documentElement).getPropertyValue('--bg')`)} / body=${await js(`getComputedStyle(document.body).backgroundColor`)}`,
+    );
+    await click('#btn-settings', 300);
+    await shot('06b-settings-moss.png');
+    await click('#settings [data-close]', 200);
+    await click('#set-theme [data-theme="dark"]', 250);
+    check('菜单可切换墨绿', await (async () => {
+      if (!menuClick('墨绿')) return false;
+      await sleep(400);
+      return (await js(`document.documentElement.dataset.theme`)) === 'moss';
+    })());
+
     /* 回到护眼 + 默认字号 + 翻页模式 */
     await click('#set-theme [data-theme="sepia"]', 250);
     await js(`(() => { const r = document.querySelector('#set-font-size'); r.value = '19'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
