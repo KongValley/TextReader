@@ -136,6 +136,7 @@
                 <li><kbd>Ctrl</kbd>+<kbd>PageUp/PageDown</kbd> 上/下一章（PDF 为上/下一页）</li>
                 <li><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> TXT 字号 / PDF 缩放</li>
                 <li><kbd>Ctrl</kbd>+<kbd>0</kbd> PDF 适应窗口</li>
+                <li><kbd>Enter</kbd> / <kbd>Esc</kbd> 密码框：解锁 / 取消</li>
                 <li><kbd>F11</kbd> 全屏，<kbd>Esc</kbd> 关闭面板</li>
               </ul>
             </div>
@@ -176,6 +177,18 @@
       </footer>
 
       <div id="toast" hidden></div>
+
+      <div id="pw-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pw-title">
+        <form id="pw-form">
+          <h3 id="pw-title">该 PDF 已加密</h3>
+          <p id="pw-hint" class="muted small">需要密码才能打开。</p>
+          <input id="pw-input" type="password" placeholder="请输入密码" autocomplete="off" spellcheck="false" />
+          <div class="pw-actions">
+            <button type="button" id="pw-cancel" class="btn">取消</button>
+            <button type="submit" id="pw-ok" class="btn primary">解锁</button>
+          </div>
+        </form>
+      </div>
     </div>
     <script type="module" src="app.js"></script>
   </body>

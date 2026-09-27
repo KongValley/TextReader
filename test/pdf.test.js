@@ -12,6 +12,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PDF_MAX_BYTES, isPdfPath, readPdfFile } from '../src/main/pdf.js';
 import { Store } from '../src/main/store.js';
 import { buildOutline, destToPage } from '../src/renderer/pdf/outline.js';
+import { LOCKED_PDF_PASSWORD } from '../scripts/pdf-fixtures.mjs';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const OUTLINE_PDF = path.join(FIXTURES, 'outline.pdf');
@@ -23,13 +24,26 @@ function tmpStore() {
   return new Store(path.join(dir, 'state.json'));
 }
 
-/** 用渲染进程同一套参数打开字节，验证主进程交出去的东西真的能被 pdf.js 解析。 */
-async function openWithPdfjs(bytes) {
+/** 建加载任务（不 await）：加密文档要先挂 onPassword，所以得能拿到 task 本身 */
+function openTask(bytes, options = {}) {
   // pdf.js 拒收 Node Buffer，只接受纯 Uint8Array（渲染进程走 IPC 拿到的就是后者）
   const data = bytes instanceof Uint8Array && !Buffer.isBuffer(bytes) ? bytes : new Uint8Array(bytes);
-  const task = pdfjs.getDocument({ data, isEvalSupported: false });
+  return pdfjs.getDocument({ data, isEvalSupported: false, ...options });
+}
+
+/** 用渲染进程同一套参数打开字节，验证主进程交出去的东西真的能被 pdf.js 解析。 */
+async function openWithPdfjs(bytes, options = {}) {
+  const task = openTask(bytes, options);
   const doc = await task.promise;
   return { doc, task };
+}
+
+/** 加密文档：pdf.js 只认 loadingTask.onPassword（写在 getDocument 参数里不生效） */
+function withPasswordProvider(task, provider) {
+  task.onPassword = (updateCallback, reason) => {
+    Promise.resolve(provider(reason)).then((password) => updateCallback(password == null ? new Error('password-cancelled') : password));
+  };
+  return task;
 }
 
 test('isPdfPath 只认 .pdf 扩展名（大小写不敏感）', () => {
@@ -133,16 +147,55 @@ test('destToPage：命名目标、页号、页引用与坏目标', async () => {
   assert.equal(await destToPage(doc, []), null);
 });
 
-test('加密 PDF：主进程照常交出字节，pdf.js 以 PasswordException 拒绝', async () => {
+test('加密 PDF：主进程照常交出字节，pdf.js 按密码回调要密码', async () => {
   const locked = path.join(FIXTURES, 'locked.pdf');
   const store = tmpStore();
   const res = await readPdfFile(locked, { store });
   assert.equal(res.kind, 'pdf');
 
-  await assert.rejects(async () => {
-    const { task } = await openWithPdfjs(res.data);
-    await task.destroy();
-  }, (err) => err.name === 'PasswordException');
+  // 没有密码回调 → PasswordException（原因：需要密码）
+  await assert.rejects(
+    async () => {
+      const { task } = await openWithPdfjs(res.data);
+      await task.destroy();
+    },
+    (err) => err.name === 'PasswordException' && err.code === pdfjs.PasswordResponses.NEED_PASSWORD,
+  );
+});
+
+test('加密 PDF：密码错误会再次要密码，密码正确则完整还原文档', async () => {
+  const locked = path.join(FIXTURES, 'locked.pdf');
+  const reasons = [];
+  const task = openTask(fs.readFileSync(locked));
+  withPasswordProvider(task, (reason) => {
+    reasons.push(reason);
+    return reason === pdfjs.PasswordResponses.NEED_PASSWORD ? 'not-the-password' : LOCKED_PDF_PASSWORD;
+  });
+  const doc = await task.promise;
+
+  assert.deepEqual(reasons, [pdfjs.PasswordResponses.NEED_PASSWORD, pdfjs.PasswordResponses.INCORRECT_PASSWORD]);
+  assert.equal(doc.numPages, 2);
+  // 大纲与正文都要能解出来（真加密：字符串与流都被 RC4 过）
+  assert.deepEqual((await buildOutline(doc)).map((o) => o.title), [
+    'Chapter 1 - Start',
+    'Chapter 2 - Review',
+    'Section 2.1 - Detail',
+  ]);
+  const page1 = (await (await doc.getPage(1)).getTextContent()).items.map((it) => it.str).join('');
+  assert.match(page1, /MARKER-ALPHA/);
+  const page2 = (await (await doc.getPage(2)).getTextContent()).items.map((it) => it.str).join('');
+  assert.match(page2, /MARKER-BETA/);
+  await task.destroy();
+});
+
+test('加密 PDF：取消输入会中止加载（pdf.js 把它变成 PasswordException）', async () => {
+  const locked = path.join(FIXTURES, 'locked.pdf');
+  const task = openTask(fs.readFileSync(locked));
+  withPasswordProvider(task, () => null); // 界面点"取消"
+  // 注意：pdf.js 不保留我们给的 Error，而是当成"没给密码"抛 PasswordException，
+  // 所以界面必须自己记「用户取消了」，不能靠错误类型判断
+  await assert.rejects(task.promise, (err) => err.name === 'PasswordException' && /No password given/.test(err.message));
+  await task.destroy();
 });
 
 test('损坏的 PDF：pdf.js 以 InvalidPDFException 拒绝', async () => {

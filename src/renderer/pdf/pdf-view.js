@@ -22,6 +22,11 @@ const pageApi = (n) => n + 1; // 0 基页码 ↔ pdf.js 的 1 基页号
 /** #pdf-pages 是所有文档共用的节点：用序号标记当前"占用者"，旧视图只清理自己挂上去的节点 */
 let viewSeq = 0;
 
+/** 用户取消输入密码时用来中止加载的错误（pdf.js 约定：回调里给 Error 就放弃本次加载） */
+const PASSWORD_CANCELLED = 'password-cancelled';
+/** pdf.js 的密码提示原因：密码不对（第一次要密码时是 NEED_PASSWORD） */
+export const PASSWORD_INCORRECT = pdfjs.PasswordResponses.INCORRECT_PASSWORD;
+
 export class PdfView {
   #container;
   #strip;
@@ -64,8 +69,12 @@ export class PdfView {
     return Math.max(0.05, Math.min(1, viewW / rec.size.w, viewH / rec.size.h));
   }
 
-  /** @param {ArrayBuffer|Uint8Array} data */
-  async open(data) {
+  /**
+   * @param {ArrayBuffer|Uint8Array} data
+   * @param {{ onPassword?: (reason: number) => Promise<string|null> }} [opts]
+   *   onPassword 返回密码字符串则用它重试，返回 null/抛错则中止本次打开。
+   */
+  async open(data, { onPassword } = {}) {
     // app:// 不是 http(s)，pdf.js 不会把资源取回交给 worker，必须由主线程取（CSP 里放行 connect-src）
     const task = pdfjs.getDocument({
       data: data instanceof Uint8Array ? data : new Uint8Array(data),
@@ -77,6 +86,16 @@ export class PdfView {
       // CSP 无 unsafe-eval：显式关掉基于 new Function 的字体优化路径，避免控制台报 CSP 违规
       isEvalSupported: false,
     });
+    if (onPassword) {
+      // 注意：pdf.js 只认 loadingTask.onPassword，写在 getDocument 的参数里不会生效。
+      // 它自己会先用空密码试一次；失败后回调这里，给字符串重试、给 Error 中止本次加载。
+      task.onPassword = (updateCallback, reason) => {
+        Promise.resolve(onPassword(reason)).then(
+          (password) => updateCallback(password == null ? new Error(PASSWORD_CANCELLED) : password),
+          () => updateCallback(new Error(PASSWORD_CANCELLED)),
+        );
+      };
+    }
     const doc = await task.promise;
     if (this.#destroyed) {
       task.destroy();

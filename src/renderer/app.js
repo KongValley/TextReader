@@ -4,7 +4,7 @@
  */
 import { splitChapters } from '../shared/chapters.js';
 import { DEFAULT_SETTINGS, FONTS, FONT_STACK, MODE_LABEL, PDF_SCALE, THEMES, THEME_LABEL } from '../shared/settings.js';
-import { PdfView } from './pdf/pdf-view.js';
+import { PASSWORD_INCORRECT, PdfView } from './pdf/pdf-view.js';
 
 const api = window.api;
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -28,6 +28,11 @@ const el = {
   statusMeta: $('#status-meta'),
   progressFill: $('#progress-fill'),
   toast: $('#toast'),
+  pwModal: $('#pw-modal'),
+  pwForm: $('#pw-form'),
+  pwInput: $('#pw-input'),
+  pwHint: $('#pw-hint'),
+  pwCancel: $('#pw-cancel'),
   searchInput: $('#search-input'),
   searchCount: $('#search-count'),
   btnMode: $('#btn-mode'),
@@ -223,9 +228,10 @@ async function openPayload(res) {
 /* ================= 打开 PDF ================= */
 
 function closePdf() {
-  // 切换文档时丢弃还在跑的 PDF 查找
+  // 切换文档时丢弃还在跑的 PDF 查找与未答完的密码框
   pdfSearchToken++;
   pdfSearchBusy = false;
+  closePasswordDialog(null);
   if (!state.pdf) return;
   state.pdf.destroy();
   state.pdf = null;
@@ -235,12 +241,58 @@ function closePdf() {
 function pdfErrorMessage(err) {
   const name = err?.name ?? '';
   const msg = String(err?.message ?? err);
-  if (name === 'PasswordException' || /password/i.test(msg)) return 'PDF 已加密，暂不支持输入密码';
+  if (name === 'PasswordException' || /password/i.test(msg)) return 'PDF 已加密，密码校验未通过';
   if (name === 'InvalidPDFException') return 'PDF 无法解析（文件损坏或格式异常）';
   return `PDF 打开失败：${msg}`;
 }
 
+/* ---------- 加密 PDF 的密码输入 ---------- */
+
+/** 本次运行内记住已经验证通过的密码（只在内存里，不写进 state.json） */
+const pdfPasswords = new Map();
+let pwResolve = null;
+
+/** 弹框要密码；返回密码字符串，取消返回 null */
+function askPdfPassword(filePath, fileName, reason) {
+  const incorrect = reason === PASSWORD_INCORRECT;
+  if (incorrect) pdfPasswords.delete(filePath); // 之前记的密码不对，丢掉
+  const cached = pdfPasswords.get(filePath);
+  if (cached && !incorrect) return Promise.resolve(cached);
+
+  return new Promise((resolve) => {
+    pwResolve = resolve;
+    el.pwHint.textContent = incorrect
+      ? '密码不正确，请重试。'
+      : `${fileName ? `「${fileName}」` : '该 PDF'}已加密，需要密码才能打开。`;
+    el.pwInput.value = '';
+    el.pwInput.dataset.error = incorrect ? '1' : '0';
+    el.pwModal.hidden = false;
+    el.pwInput.focus();
+  });
+}
+
+function closePasswordDialog(password) {
+  if (!pwResolve) return;
+  const resolve = pwResolve;
+  pwResolve = null;
+  el.pwModal.hidden = true;
+  el.pwInput.value = '';
+  el.pwInput.dataset.error = '0';
+  resolve(password);
+}
+
+function bindPasswordDialog() {
+  el.pwForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const password = el.pwInput.value;
+    if (!password) return; // 无密码的 PDF 不会走到这里，空串没有意义
+    closePasswordDialog(password);
+  });
+  el.pwCancel.addEventListener('click', () => closePasswordDialog(null));
+}
+
 async function openPdf(res) {
+  closePasswordDialog(null); // 上一次没答完的密码框作废（它对应的加载会被中止）
   const view = new PdfView({
     container: el.viewport,
     strip: el.pdfPages,
@@ -248,14 +300,30 @@ async function openPdf(res) {
     mode: state.settings.mode,
   });
   toast('正在打开 PDF…');
+  let usedPassword = null;
+  let cancelled = false;
   try {
-    await view.open(res.data);
+    await view.open(res.data, {
+      onPassword: async (reason) => {
+        const password = await askPdfPassword(res.path, res.name, reason);
+        if (password) usedPassword = password;
+        else cancelled = true;
+        return password;
+      },
+    });
   } catch (err) {
     view.destroy();
+    // 用户点"取消"时 pdf.js 只会抛出 PasswordException("No password given")，得靠这个标记区分
+    if (cancelled) {
+      toast('已取消打开该 PDF（需要密码）');
+      return;
+    }
     console.error('[pdf] 打开失败', err?.name ?? '', err?.message ?? err);
     toast(pdfErrorMessage(err), true);
     return;
   }
+  // 记住这次验证通过的密码：同一次运行里再打开这个文件就不再问
+  if (usedPassword) pdfPasswords.set(res.path, usedPassword);
 
   closePdf();
   state.pdf = view;
@@ -1132,6 +1200,11 @@ function bindUI() {
   });
 
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.pwModal.hidden) {
+      e.preventDefault();
+      closePasswordDialog(null);
+      return;
+    }
     if (e.key === 'Escape') {
       closeAllDrawers();
       if (isTypingTarget(e.target)) e.target.blur();
@@ -1247,6 +1320,7 @@ async function init() {
   applySettings();
   syncSettingsUI();
   renderRecent();
+  bindPasswordDialog();
   bindUI();
 
   api.onCommand(handleCommand);

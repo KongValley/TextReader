@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Menu } from 'electron';
+import { LOCKED_PDF_PASSWORD } from './pdf-fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -471,22 +472,74 @@ export async function runSmoke(ctx) {
       await shot('22-pdf-real-search.png');
     }
 
-    /* ---------- 场景 12：打不开的 PDF 要有明确提示，且不影响当前文档 ---------- */
+    /* ---------- 场景 12：加密 PDF 的密码输入 ---------- */
     const lockedPdf = path.join(FIXTURES, 'locked.pdf');
     const brokenPdf = path.join(SHOTS, 'userdata', 'broken.pdf');
     fs.mkdirSync(path.dirname(brokenPdf), { recursive: true });
     fs.writeFileSync(brokenPdf, '%PDF-1.4\nthis is not a real pdf\n', 'latin1');
+    const pwHidden = () => js(`document.querySelector('#pw-modal').hidden`);
+    const submitPassword = (value) =>
+      js(`(() => {
+        const i = document.querySelector('#pw-input');
+        i.value = ${JSON.stringify(value)};
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('#pw-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        return true;
+      })()`);
 
     const keepName = await text('#file-name');
     const keepCanvases = await js(`document.querySelectorAll('#pdf-pages canvas').length`);
 
+    /* 12.1 取消：当前文档不受影响 */
     openFile(lockedPdf);
-    check('打开加密 PDF 给出提示', await waitFor(`document.querySelector('#toast').textContent.includes('加密')`, 15000), await text('#toast'));
-    await sleep(600);
-    check('加密 PDF 不会顶掉当前文档', (await text('#file-name')) === keepName, `${keepName} → ${await text('#file-name')}`);
-    check('加密 PDF 不会清空画布', (await js(`document.querySelectorAll('#pdf-pages canvas').length`)) === keepCanvases, `${keepCanvases} → ${await js(`document.querySelectorAll('#pdf-pages canvas').length`)}`);
-    await shot('25-pdf-locked.png');
+    check('加密 PDF 弹出密码框', await waitFor(`!document.querySelector('#pw-modal').hidden`, 15000));
+    check('密码框提示需要密码', (await text('#pw-hint')).includes('需要密码'), await text('#pw-hint'));
+    check('提示里带文件名', (await text('#pw-hint')).includes('locked.pdf'), await text('#pw-hint'));
+    await shot('25-pdf-password.png');
+    await click('#pw-cancel', 500);
+    check('取消后密码框关闭', await pwHidden());
+    check('取消后提示已取消', (await text('#toast')).includes('已取消'), await text('#toast'));
+    await sleep(700);
+    check('取消后当前文档仍在', (await text('#file-name')) === keepName, `${keepName} → ${await text('#file-name')}`);
+    check('取消后画布未被清空', (await js(`document.querySelectorAll('#pdf-pages canvas').length`)) === keepCanvases);
 
+    /* 12.1b 密码框还开着时改开别的文件：框要自己收起来，别卡住界面 */
+    openFile(lockedPdf);
+    check('密码框再次弹出（等待处理）', await waitFor(`!document.querySelector('#pw-modal').hidden`, 15000));
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(700);
+    check('改开文本后密码框自动关闭', await pwHidden());
+    check('改开文本后文本视图正常', await js(`!document.querySelector('#flow').hidden && document.querySelector('#pdf-pages').hidden`));
+
+    /* 12.2 先输错再输对 */
+    openFile(lockedPdf);
+    check('再次弹出密码框', await waitFor(`!document.querySelector('#pw-modal').hidden`, 15000));
+    await submitPassword('definitely-wrong');
+    check('密码错误会再次弹框并提示', await waitFor(`!document.querySelector('#pw-modal').hidden && document.querySelector('#pw-hint').textContent.includes('不正确')`, 15000), await text('#pw-hint'));
+    check('密码错误时输入框标红', (await attr('#pw-input', 'error')) === '1', `error=${await attr('#pw-input', 'error')}`);
+    await shot('26-pdf-password-wrong.png');
+    await submitPassword(LOCKED_PDF_PASSWORD);
+    check('正确密码后密码框关闭', await waitFor(`document.querySelector('#pw-modal').hidden`, 15000));
+    await sleep(2200);
+    check('正确密码后打开加密 PDF', (await text('#file-name')).includes('locked.pdf'), await text('#file-name'));
+    check('加密 PDF 页数正确', /PDF\s*2\s*页/.test(await text('#status-meta')), await text('#status-meta'));
+    check('加密 PDF 画布已绘制', await canvasPainted('#pdf-pages .pdf-page[data-page="0"] canvas'));
+    check('加密 PDF 大纲解出（说明真的解密了）', (await text('#toc-count')) === '3 项', await text('#toc-count'));
+    check('加密 PDF 文本层已生成', (await js(`document.querySelectorAll('#pdf-pages .textLayer span').length`)) > 0);
+    await search('MARKER-BETA');
+    check('加密 PDF 内可查找', /1\/1\s*处|1\s*处/.test(await text('#search-count')), await text('#search-count'));
+    await shot('27-pdf-unlocked.png');
+
+    /* 12.3 同一次运行内再打开：记住已验证的密码，不再询问 */
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(600);
+    openFile(lockedPdf);
+    check('再次打开加密 PDF 直接成功', await waitFor(`document.querySelector('#file-name').textContent.includes('locked.pdf')`, 15000));
+    check('已记住密码时不再弹框', await pwHidden());
+    await sleep(1200);
+    check('记住密码后仍能渲染', (await js(`document.querySelectorAll('#pdf-pages canvas').length`)) >= 1, `${await js(`document.querySelectorAll('#pdf-pages canvas').length`)} 个`);
+
+    /* ---------- 场景 13：损坏 PDF 要有明确提示，且不影响当前文档 ---------- */
     openFile(brokenPdf);
     check('损坏 PDF 给出解析失败提示', await waitFor(`document.querySelector('#toast').textContent.includes('无法解析')`, 15000), await text('#toast'));
     await sleep(600);
@@ -500,7 +553,7 @@ export async function runSmoke(ctx) {
       const canvases = await js(`document.querySelectorAll('#pdf-pages canvas').length`);
       return first === 0 && second === 1 && canvases >= 1;
     })(), `page=${await attr('#viewport', 'page')}`);
-    await shot('26-pdf-broken.png');
+    await shot('28-pdf-broken.png');
   } catch (err) {
     check('冒烟测试异常', false, String(err?.stack ?? err));
   } finally {
