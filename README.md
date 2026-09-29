@@ -70,6 +70,17 @@ npm run icon       # 重新生成 build/icon.png 与 build/icon.ico（纯 Node�
 
 打包会把 pdf.js 一并收进 `app.asar`（只保留用得到的 `build/pdf.mjs`、`build/pdf.worker.min.mjs`、`cmaps/`、`standard_fonts/`、`wasm/`、`iccs/`，见 `electron-builder.yml`），asar 约 5.4MB、安装包体积比纯 TXT 版大约 +6MB。
 
+## 发布
+
+改好 `package.json` 版本并提交后，打 tag 推送即可，GitHub Actions 会在服务器上打包并自动发布 Release（安装包 / 便携版 / blockmap / `latest.yml`，应用内更新直接可用）：
+
+```bash
+npm version 1.3.1 --no-git-tag-version && git commit -am "发布 v1.3.1" && git push
+git tag v1.3.1 && git push origin v1.3.1
+```
+
+工作流见 `.github/workflows/release.yml`；版本号与 tag 不一致会直接报错终止。也可以在 Actions 页手动触发（只打包，产物作为 workflow artifact 下载，不发 Release）。
+
 ## 测试
 
 ```bash
