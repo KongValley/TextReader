@@ -66,6 +66,7 @@ const el = {
   justify: $('#set-justify'),
   restToggle: $('#set-rest'),
   shortcuts: $('#shortcuts'),
+  usage: $('#usage'),
 };
 
 const state = {
@@ -1582,6 +1583,12 @@ function handleCommand(cmd, payload) {
     case 'help':
       el.settings.hidden = false;
       el.shortcuts.hidden = false;
+      el.usage.hidden = true;
+      break;
+    case 'usage':
+      el.settings.hidden = false;
+      el.usage.hidden = false;
+      el.shortcuts.hidden = true; // 两个帮助块互斥，一次只看一种
       break;
     case 'shelf-reveal': {
       const t = ctxTarget();

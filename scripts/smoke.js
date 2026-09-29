@@ -582,6 +582,20 @@ export async function runSmoke(ctx) {
     const markersSoFar = () => (updateMarkers ?? []).join(' / ');
 
     delete process.env.TXT_UPDATE_FAKE; // 先清零旧值再进入场景
+    check('菜单「使用说明」可打开', await (async () => {
+      if (!menuClick('使用说明')) return false;
+      await sleep(400);
+      return Boolean(await js(`!document.querySelector('#settings').hidden && !document.querySelector('#usage').hidden && document.querySelector('#usage').textContent.includes('书架')`));
+    })());
+    await js(`(() => { document.querySelector('#settings [data-close]').click(); return true; })()`);
+    await sleep(200);
+    check('快捷键与使用说明互斥', await (async () => {
+      if (!menuClick('快捷键')) return false;
+      await sleep(300);
+      return Boolean(await js(`!document.querySelector('#shortcuts').hidden && document.querySelector('#usage').hidden`));
+    })());
+    await js(`(() => { document.querySelector('#settings [data-close]').click(); return true; })()`);
+    await sleep(200);
     fakeRelease(JSON.stringify({
       tag_name: 'v9.9.9',
       html_url: 'https://example.test/releases/tag/v9.9.9',

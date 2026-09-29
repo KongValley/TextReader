@@ -89,6 +89,7 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
       submenu: [
         { label: '检查更新…', click: () => checkUpdate() },
         { type: 'separator' },
+        { label: '使用说明', click: () => send('usage') },
         { label: '快捷键', click: () => send('help') },
         {
           label: '关于',
