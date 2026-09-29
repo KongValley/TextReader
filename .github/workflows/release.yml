@@ -61,6 +61,7 @@ jobs:
           ASSETS="dist/TXTReader-$V-setup.exe dist/TXTReader-$V-setup.exe.blockmap dist/TXTReader-$V-portable.exe dist/latest.yml"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $ASSETS --clobber
+            gh release edit "$TAG" --draft=false
           else
             gh release create "$TAG" --title "TXT 阅读器 $TAG" --generate-notes $ASSETS
           fi
