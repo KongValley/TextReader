@@ -13,6 +13,10 @@ export const DEFAULT_SETTINGS = {
   pdfScale: 0,
   customThemeBase: '',
   customThemeColors: {},
+  restReminder: false,
+  autoScrollSpeed: 60,
+  alwaysOnTop: false,
+  shelfDirs: [],
 };
 
 /** PDF 缩放：0 = 适应窗口（默认），其余为用户手动比例（Ctrl+= / Ctrl+- 每次 0.1）。 */
@@ -78,4 +82,11 @@ export function migrateFontKeys(raw) {
     return { fontLatin: n, fontCjk: n };
   }
   return { fontLatin: '', fontCjk: oldCjk[raw.fontFamily] ?? '' };
+}
+
+/** 久坐提醒判定：开启、且 idleMs 内有活动、且距上次提醒 ≥ everyMs。 */
+export function restReminderDue({ now, lastActivity, lastPrompt, enabled, everyMs = 45 * 60_000, idleMs = 5 * 60_000 }) {
+  if (!enabled) return false;
+  if (now - lastActivity > idleMs) return false;
+  return now - lastPrompt >= everyMs;
 }

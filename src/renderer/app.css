@@ -84,7 +84,7 @@ body {
 #app {
   height: 100%;
   display: grid;
-  grid-template-rows: 48px 1fr auto;
+  grid-template-rows: 84px 1fr auto;
 }
 
 /* 阅读区域内允许选中/复制 */
@@ -114,10 +114,17 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 12px;
+  padding: 36px 150px 0 12px; /* 顶部给系统标题栏 overlay（36px），右侧给最小化/最大化/关闭按钮让位 */
+  box-sizing: border-box;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   z-index: 30;
+  -webkit-app-region: drag; /* 无框标题栏：整条工具栏可拖动窗口 */
+  overflow: hidden;
+}
+#toolbar .btn,
+#toolbar input {
+  -webkit-app-region: no-drag;
 }
 
 .tb-group {
@@ -200,13 +207,16 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 0 1 auto;
+  min-width: 120px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 1px 4px 1px 8px;
 }
 #search-input {
-  width: 150px;
+  width: 100%;
+  min-width: 40px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -216,7 +226,9 @@ body {
 }
 #search-count {
   font-size: 11px;
-  min-width: 46px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
   text-align: right;
   white-space: nowrap;
 }
@@ -290,6 +302,10 @@ body {
 ::highlight(search) {
   background: var(--hl);
   color: #201700;
+}
+::highlight(marks) {
+  background: var(--hl);
+  color: inherit;
 }
 
 /* ============ 抽屉 ============ */
@@ -550,6 +566,15 @@ kbd {
   color: var(--muted);
   margin-top: 4px;
 }
+.bm-rename {
+  width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+}
 
 /* ============ 欢迎页 ============ */
 #welcome {
@@ -562,6 +587,9 @@ kbd {
   overflow: auto;
 }
 body.has-file #welcome {
+  display: none;
+}
+body:not(.has-file) #btn-back-shelf {
   display: none;
 }
 .welcome-card {
@@ -583,6 +611,41 @@ body.has-file #welcome {
 }
 #recent-block {
   margin-top: 10px;
+}
+#shelf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.shelf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.shelf-row:hover {
+  background: var(--panel);
+}
+.shelf-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shelf-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #recent-list {
   text-align: left;
@@ -626,6 +689,7 @@ body.has-file #welcome {
   background: var(--panel);
   border-top: 1px solid var(--border);
   position: relative;
+  overflow: hidden;
 }
 .ellipsis {
   overflow: hidden;
@@ -638,23 +702,34 @@ body.has-file #welcome {
   color: var(--fg-soft);
 }
 #status-meta {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 #progress-track {
+  position: relative;
   height: 3px;
   flex: 1 1 60px;
+  min-width: 40px;
   background: var(--border);
   border-radius: 2px;
-  overflow: hidden;
   max-width: 220px;
+  cursor: pointer;
+}
+#progress-track::after {
+  content: '';
+  position: absolute;
+  inset: -7px 0; /* 扩大点击/拖拽热区（轨道只有 3px 高） */
 }
 #progress-fill {
   display: block;
   height: 100%;
   width: 0;
   background: var(--accent);
+  border-radius: 2px;
   transition: width 0.15s ease-out;
 }
 
@@ -845,4 +920,60 @@ body.dragging::after {
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   pointer-events: none;
   z-index: 80;
+}
+
+/* ============ 全屏沉浸 ============ */
+:fullscreen #app {
+  /* 工具栏/状态栏已是 fixed（脱离网格流），网格内只剩正文——单行铺满即可。
+     写成 `0 1fr 0` 会让 #body 落进第一行的 0 高行，正文只剩内边距（全屏空白）。 */
+  grid-template-rows: 100%;
+}
+:fullscreen #toolbar,
+:fullscreen #statusbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  transition: transform 0.18s ease;
+}
+:fullscreen #toolbar {
+  top: 0;
+  transform: translateY(-100%);
+  padding-top: 0;
+  padding-right: 0;
+}
+:fullscreen #statusbar {
+  bottom: 0;
+  transform: translateY(100%);
+}
+:fullscreen body.fs-reveal-top #toolbar,
+:fullscreen body.fs-reveal-bottom #statusbar {
+  transform: none;
+}
+
+/* ============ 窄窗口喘息 ============ */
+@media (max-width: 780px) {
+  #toolbar {
+    gap: 6px;
+    padding-left: 8px;
+  }
+  .tb-group {
+    gap: 2px;
+  }
+  #toolbar .btn {
+    padding: 5px 6px;
+  }
+  #toolbar .btn.tiny {
+    padding: 2px 5px;
+  }
+  #search-box {
+    min-width: 80px;
+  }
+  #search-count {
+    display: none; /* 窄窗让位给文件名；查找仍可用，计数略去 */
+  }
+  #search-prev,
+  #search-next {
+    display: none; /* Enter / Shift+Enter 仍可上一处/下一处 */
+  }
 }

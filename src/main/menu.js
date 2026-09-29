@@ -29,6 +29,15 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
       ],
     },
     {
+      label: '编辑',
+      submenu: [
+        { role: 'copy', label: '复制' },
+        { role: 'cut', label: '剪切' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
       label: '阅读',
       submenu: [
         { label: '上一章', accelerator: 'CmdOrCtrl+PageUp', click: () => send('prev-chapter') },
@@ -40,6 +49,8 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
         { type: 'separator' },
         { label: '翻页模式', type: 'radio', checked: s.mode === 'paged', click: () => send('mode', 'paged') },
         { label: '滚动模式', type: 'radio', checked: s.mode === 'scroll', click: () => send('mode', 'scroll') },
+        { label: '自动阅读', type: 'checkbox', accelerator: 'F5', click: () => send('auto-read') },
+        { label: '划线列表', click: () => send('marks') },
       ],
     },
     {
@@ -54,8 +65,22 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
         { label: '放大字号', accelerator: 'CmdOrCtrl+=', click: () => send('font', 1) },
         { label: '缩小字号', accelerator: 'CmdOrCtrl+-', click: () => send('font', -1) },
         { label: '阅读设置', accelerator: 'CmdOrCtrl+,', click: () => send('settings') },
+        { label: '窗口置顶', type: 'checkbox', checked: s.alwaysOnTop, accelerator: 'CmdOrCtrl+Shift+T', click: () => send('always-on-top') },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: '全屏' },
+        // role: togglefullscreen 只是窗口全屏，不触发 HTML5 全屏（:fullscreen CSS / fullscreenElement）。
+        // 这里显式走 Fullscreen API，让渲染进程的全屏沉浸样式与 fullscreenchange 监听生效。
+        {
+          label: '全屏',
+          accelerator: 'F11',
+          click: () => {
+            getWindow()?.webContents
+              .executeJavaScript(
+                `document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {})`,
+                true, // userGesture：绕过 Chromium 的用户激活要求
+              )
+              .catch(() => {});
+          },
+        },
         { role: 'toggleDevTools', label: '开发者工具' },
       ],
     },

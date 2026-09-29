@@ -79,6 +79,8 @@ export class Store {
       ratio: 0,
       percent: 0,
       bookmarks: [],
+      highlights: [],
+      readMs: 0,
       updatedAt: 0,
       ...(b ?? {}),
     };

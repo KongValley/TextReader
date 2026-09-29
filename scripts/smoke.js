@@ -16,7 +16,7 @@ const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function runSmoke(ctx) {
-  const { app, win, openFile, updateMarkers } = ctx;
+  const { app, win, openFile, updateMarkers, store } = ctx;
   fs.mkdirSync(SHOTS, { recursive: true });
 
   const results = [];
@@ -669,6 +669,258 @@ export async function runSmoke(ctx) {
     check('字体切换后分页仍正常', Number(await attr('#viewport', 'pages')) > 0, `${await attr('#viewport', 'pages')} 页`);
     await click('#set-theme [data-theme="sepia"]', 250);
     await click('#settings [data-close]', 200);
+
+    /* ---------- 场景 16：友好度（标题 / Ctrl+滚轮 / 进度条 / 恢复提示 / 全屏沉浸 / 书签重命名 / PDF 缩放） ---------- */
+    check('窗口标题含书名与章节', (await js(`document.title`)).includes('novel-gbk') && (await js(`document.title`)).includes('·'), await js(`document.title`));
+
+    await js(`(() => { document.querySelector('#viewport').dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -120, cancelable: true, bubbles: true })); return true; })()`);
+    await sleep(300);
+    check('Ctrl+滚轮放大 TXT 字号', (await js(`getComputedStyle(document.documentElement).getPropertyValue('--font-size')`)).includes('20'), await js(`getComputedStyle(document.documentElement).getPropertyValue('--font-size')`));
+    await js(`(() => { document.querySelector('#viewport').dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: 120, cancelable: true, bubbles: true })); return true; })()`);
+    await sleep(300);
+
+    await js(`(() => { const t = document.querySelector('#progress-track'); const r = t.getBoundingClientRect(); t.dispatchEvent(new PointerEvent('pointerdown', { clientX: r.left + r.width * 0.9, pointerId: 1, cancelable: true, bubbles: true })); t.dispatchEvent(new PointerEvent('pointerup', { clientX: r.left + r.width * 0.9, pointerId: 1, bubbles: true })); return true; })()`);
+    await sleep(1400); // 等进度写盘
+    check('进度条拖到 90% 后位置跟随', parseFloat(await js(`document.querySelector('#status-progress').textContent`)) > 50, await js(`document.querySelector('#status-progress').textContent`));
+
+    const u16f = path.join(FIXTURES, 'novel-utf16le.txt');
+    await openAndWait(u16f, `document.querySelector('#file-name').textContent.includes('utf16le')`);
+    await sleep(400);
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    check('重开文件提示已恢复位置', await waitFor(`document.querySelector('#toast').textContent.includes('已恢复到上次位置')`, 4000), await js(`document.querySelector('#toast').textContent`));
+
+    check('进入全屏', menuClick('全屏'));
+    check('全屏下工具栏自动隐藏', await waitFor(`document.fullscreenElement !== null && getComputedStyle(document.querySelector('#toolbar')).transform !== 'none'`, 6000));
+    await js(`window.dispatchEvent(new MouseEvent('mousemove', { clientY: 10, bubbles: true }))`);
+    check('鼠标移到顶部唤出工具栏', await waitFor(`document.fullscreenElement !== null && getComputedStyle(document.querySelector('#toolbar')).transform === 'none'`, 3000));
+    check('全屏下正文文字在视口内可见', await js(`(() => { const p = document.querySelector('#flow p'); if (!p) return false; const r = p.getBoundingClientRect(); const v = document.querySelector('#viewport').getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= v.top - 2 && r.left >= v.left - 2 && r.right <= v.right + 2 && r.bottom <= v.bottom + 2; })()`), JSON.stringify({
+      p: await js(`(() => { const r = document.querySelector('#flow p')?.getBoundingClientRect().toJSON(); return r ?? null; })()`),
+      v: await js(`(() => { const r = document.querySelector('#viewport').getBoundingClientRect().toJSON(); return { w: r.width, h: r.height, top: r.top, left: r.left }; })()`),
+      flow: await js(`(() => { const f = document.querySelector('#flow'); return { w: f.style.width, h: f.style.height }; })()`),
+    }));
+    check('退出全屏', menuClick('全屏'));
+    await sleep(500);
+    check('退出全屏后恢复常规布局', await js(`document.fullscreenElement === null`));
+
+    await click('#btn-bookmarks', 350);
+    await js(`(() => { const btn = document.querySelector('#bookmark-list .bm-row .btn.tiny[title="重命名书签"]'); if (!btn) return false; btn.click(); return true; })()`);
+    await sleep(250);
+    await js(`(() => { const i = document.querySelector('.bm-rename'); if (!i) return false; i.value = '我的书签'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+    await sleep(300);
+    check('书签重命名生效', (await js(`document.querySelector('#bookmark-list .bm-title')?.textContent ?? ''`)) === '我的书签', await js(`document.querySelector('#bookmark-list .bm-title')?.textContent ?? ''`));
+    await click('#bookmarks [data-close]', 200);
+
+    await openAndWait(path.join(FIXTURES, 'outline.pdf'), `document.querySelector('#file-name').textContent.includes('outline.pdf')`);
+    await sleep(1200);
+    const metaBefore = await text('#status-meta');
+    await js(`(() => { document.querySelector('#viewport').dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: 120, cancelable: true, bubbles: true })); return true; })()`);
+    await sleep(500);
+    const metaAfter = await text('#status-meta');
+    const zoomBefore = parseFloat(metaBefore.match(/(\d+)%$/)?.[1] ?? '100');
+    const zoomAfter = parseFloat(metaAfter.match(/(\d+)%$/)?.[1] ?? '0');
+    check('PDF 下 Ctrl+滚轮缩小', zoomAfter < zoomBefore, `${metaBefore} → ${metaAfter}`);
+
+    /* ---------- 场景 17：舒适度（侧键 / 回退 / 章节提示 / 进度悬停 / 久坐设置 / 最近时间） ---------- */
+    await js(`(() => { const v = document.querySelector('#viewport'); v.dispatchEvent(new MouseEvent('mouseup', { button: 4, bubbles: true, cancelable: true })); return true; })()`);
+    await sleep(400);
+    check('鼠标侧键前进翻页', (await js(`document.title`)).includes('第 2/2 页'), await js(`document.title`));
+    await js(`(() => { const v = document.querySelector('#viewport'); v.dispatchEvent(new MouseEvent('mouseup', { button: 3, bubbles: true, cancelable: true })); return true; })()`);
+    await sleep(400);
+    check('鼠标侧键后退翻页', (await js(`document.title`)).includes('第 1/2 页'), await js(`document.title`));
+
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(500);
+    const before17 = await text('#status-chapter');
+    await click('#btn-toc', 350);
+    await click('.toc-item[data-i="3"]', 500);
+    await key('Left', ['alt'], 450);
+    check('Alt+← 返回跳转前章节', (await text('#status-chapter')) === before17, `${await text('#status-chapter')} / ${before17}`);
+    await key('Left', ['alt'], 450);
+    check('回退栈空时给出提示', (await js(`document.querySelector('#toast').textContent`)).includes('没有更早的跳转了'), await js(`document.querySelector('#toast').textContent`));
+    await click('#toc [data-close]', 200);
+
+    check('进入下一章提示章节名', await (async () => {
+      if (!menuClick('下一章')) return false;
+      await sleep(500);
+      return (await js(`document.querySelector('#toast').textContent`)).includes('已进入：');
+    })(), await js(`document.querySelector('#toast').textContent`));
+
+    await js(`(() => { const t = document.querySelector('#progress-track'); const r = t.getBoundingClientRect(); t.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + r.width * 0.9, bubbles: true, cancelable: true })); return true; })()`);
+    await sleep(200);
+    check('悬停进度条预览章节与百分比', /%\s*$/.test(await js(`document.querySelector('#progress-track').title`)) && (await js(`document.querySelector('#progress-track').title`)).includes('·'), await js(`document.querySelector('#progress-track').title`));
+
+    await click('#btn-settings', 350);
+    await js(`(() => { const c = document.querySelector('#set-rest'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(400);
+    await click('#settings [data-close]', 200);
+    await click('#btn-settings', 350);
+    check('久坐提醒开关持久化', await js(`document.querySelector('#set-rest').checked === true`));
+    await js(`(() => { const c = document.querySelector('#set-rest'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await sleep(400);
+    await click('#settings [data-close]', 200);
+
+    // 欢迎页最近列表仅在启动时渲染：强制刷新等价「下次启动」，验证持久化 + 相对时间
+    win.webContents.reload();
+    await sleep(500);
+    const reloaded = await waitFor(`document.documentElement.dataset.ready === '1' && document.querySelectorAll('.recent-item').length > 0`, 15000);
+    check('刷新后最近列表有记录', reloaded, JSON.stringify({
+      ready: await js(`document.documentElement.dataset.ready`),
+      list: (await text('#recent-list')).slice(0, 60),
+      recent: await js(`api.getState().then((s) => s.recent.slice(0, 2).map((r) => r.name))`),
+    }));
+    check('最近列表显示相对时间', /(刚刚|分钟前|小时前|天前)/.test(await text('.recent-item .recent-meta')), await text('.recent-item .recent-meta'));
+
+    /* ---------- 场景 18：第 4 轮舒适度（时长 / 划线 / 复制 / 自动阅读 / 置顶 / 标题栏 / 最近进度） ---------- */
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(600);
+
+    /* 阅读时长：9 秒一次翻页（保持活动）累计约 1 分钟 */
+    for (let i = 0; i < 7; i++) await key('Right', [], 9000);
+    check('状态栏显示已读时长', (await text('#status-meta')).includes('已读'), await text('#status-meta'));
+    check('时长已写入书记录', (store.getBook(gbk)?.readMs ?? 0) >= 60_000, `${store.getBook(gbk)?.readMs ?? 0}ms`);
+
+    /* 划线：选区 → Ctrl+H → 面板 → 删除 → 持久化 */
+    await js(`(() => { const p = document.querySelectorAll('#flow p[data-i]')[1]; const r = document.createRange(); r.setStart(p.firstChild, 2); r.setEnd(p.firstChild, 24); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`);
+    await key('H', ['ctrl'], 400);
+    check('Ctrl+H 创建划线并渲染高亮', await js(`Boolean(window.CSS?.highlights?.has('marks'))`));
+    await click('#btn-marks', 350);
+    check('划线面板列出预览文本', (await js(`document.querySelector('#mark-list .bm-preview')?.textContent ?? ''`)).length > 5, await js(`document.querySelector('#mark-list .bm-preview')?.textContent ?? ''`));
+    await js(`(() => { const b = document.querySelector('#mark-list .bm-row .btn.tiny'); if (!b) return false; b.click(); return true; })()`);
+    await sleep(300);
+    check('面板可删除划线', await js(`document.querySelector('#mark-list .muted') !== null`));
+    await js(`(() => { const p = document.querySelectorAll('#flow p[data-i]')[1]; const r = document.createRange(); r.setStart(p.firstChild, 2); r.setEnd(p.firstChild, 24); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`);
+    await key('H', ['ctrl'], 400);
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(500);
+    check('划线随书持久化', await js(`Boolean(window.CSS?.highlights?.has('marks'))`) && (await js(`document.querySelector('#mark-list .bm-preview') !== null`)) === true, `${await js(`document.querySelectorAll('#mark-list .bm-row').length`)} 条`);
+    await click('#marks [data-close]', 200);
+
+    /* 复制：菜单 role 修复 Ctrl+C。宿主机其他进程会竞争系统剪贴板，故断言页面 copy 事件而非剪贴板内容 */
+    await js(`(() => { window.__copyFired = false; document.addEventListener('copy', () => { window.__copyFired = true; }, { once: true }); const p = document.querySelectorAll('#flow p[data-i]')[1]; const r = document.createRange(); r.selectNodeContents(p); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`);
+    await key('C', ['ctrl'], 400);
+    check('Ctrl+C 触发复制命令', await js(`window.__copyFired === true`));
+
+    /* 自动阅读：长章文件（4000 字分段）滚动模式启动 → 手动键停止（gbk 章节太短，整章不溢出） */
+    await openAndWait(path.join(FIXTURES, 'novel-noheading-crlf.txt'), `document.querySelector('#file-name').textContent.includes('noheading')`);
+    await sleep(400);
+    check('切滚动模式', menuClick('滚动模式'));
+    await sleep(500);
+    await js(`(() => { document.querySelector('#viewport').scrollTop = 0; return true; })()`);
+    await sleep(200);
+    check('F5 开始自动阅读', menuClick('自动阅读'));
+    await sleep(1500);
+    const st1 = Number(await js(`document.querySelector('#viewport').scrollTop`));
+    await sleep(1200);
+    const st2 = Number(await js(`document.querySelector('#viewport').scrollTop`));
+    check('自动阅读持续滚动', st2 > st1, `${st1} → ${st2}`);
+    await key('ArrowDown', [], 500);
+    const st3 = Number(await js(`document.querySelector('#viewport').scrollTop`));
+    await sleep(1000);
+    const st4 = Number(await js(`document.querySelector('#viewport').scrollTop`));
+    check('手动操作停止自动阅读', st4 - st3 < 4, `${st3} → ${st4}`);
+    check('切回翻页模式', menuClick('翻页模式'));
+    await sleep(500);
+
+    /* 窗口置顶（轮询等待主进程生效，负载免疫） */
+    const pollAlwaysOnTop = async (want) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 4000) {
+        if (win.isAlwaysOnTop() === want) return true;
+        await sleep(150);
+      }
+      return win.isAlwaysOnTop() === want;
+    };
+    check('窗口置顶开启', menuClick('窗口置顶') && await pollAlwaysOnTop(true));
+    check('窗口置顶关闭', menuClick('窗口置顶') && await pollAlwaysOnTop(false));
+
+    /* 标题栏颜色跟随主题：经 set-titlebar IPC 通道断言（getTitleBarOverlay 部分版本不可用） */
+    const tbColors = () => updateMarkers.filter((m) => m.startsWith('set-titlebar ')).map((m) => m.slice('set-titlebar '.length));
+    check('标题栏 overlay 颜色已同步', tbColors().length > 0 && /^#([0-9a-f]{6})$/i.test(tbColors().at(-1) ?? ''), tbColors().join(' | '));
+    check('切夜间主题', menuClick('夜间'));
+    await sleep(500);
+    check('标题栏颜色随主题变化', tbColors().length > 1 && tbColors().at(-1) !== tbColors().at(-2), `${tbColors().at(-2)} → ${tbColors().at(-1)}`);
+    check('切回归护眼', menuClick('护眼'));
+    await sleep(400);
+
+    /* 最近列表进度 %（welcome 仅启动渲染，走强制刷新） */
+    win.webContents.reload();
+    await sleep(500);
+    check('最近列表带进度百分比', await waitFor(`document.documentElement.dataset.ready === '1' && /\\d+%/.test(document.querySelector('.recent-item .recent-meta')?.textContent ?? '')`, 15000), await text('.recent-item .recent-meta'));
+
+    /* 窄窗口：状态栏与工具栏按钮不溢出（用户截图回归） */
+    win.setContentSize(720, 560);
+    await sleep(500);
+    await openAndWait(gbk, `document.querySelector('#file-name').textContent.includes('novel-gbk')`);
+    await sleep(400);
+    check('窄窗口状态栏不溢出', await js(`(() => { const b = document.querySelector('#statusbar'); return b.scrollWidth <= b.clientWidth + 1; })()`));
+    check('窄窗口设置按钮不被裁切', await js(`(() => { const r = document.querySelector('#btn-settings').getBoundingClientRect(); return r.right <= window.innerWidth - 130 && r.right > 0; })()`), JSON.stringify(await js(`document.querySelector('#btn-settings').getBoundingClientRect().toJSON()`)));
+    check('窄窗口进度条保留最小宽度', await js(`(() => { const w = document.querySelector('#progress-track').getBoundingClientRect().width; return w >= 40; })()`), `${await js(`document.querySelector('#progress-track').getBoundingClientRect().width`)}px`);
+    check('窄窗口查找按钮不被裁切', await js(`(() => { const b = document.querySelector('#search-box').getBoundingClientRect(); const p = document.querySelector('#search-prev'); if (getComputedStyle(p).display === 'none') return true; const r = p.getBoundingClientRect(); return r.right <= b.right + 1 && r.left >= b.left; })()`));
+    check('窄窗口文件名保留喘息空间', await js(`(() => { const w = document.querySelector('#file-info').getBoundingClientRect().width; return w >= 20; })()`), `${await js(`document.querySelector('#file-info').getBoundingClientRect().width`)}px`);
+    win.setContentSize(1100, 760);
+    await sleep(400);
+
+    /* ---------- 场景 19：书架（多文件夹 / 移除 / 进出目录 / 点击阅读 / PDF） ---------- */
+    const SHELF = path.join(SHOTS, 'shelf-tmp');
+    const SHELF_A = path.join(SHELF, '武侠');
+    const SHELF_B = path.join(SHELF, '资料');
+    fs.mkdirSync(SHELF_A, { recursive: true });
+    fs.mkdirSync(SHELF_B, { recursive: true });
+    fs.copyFileSync(gbk, path.join(SHELF_A, 'novel-gbk.txt'));
+    fs.copyFileSync(path.join(FIXTURES, 'novel-numbered.txt'), path.join(SHELF_A, 'aaa-未读.txt')); // 排序断言对照：未读、名字序在前
+    fs.copyFileSync(path.join(FIXTURES, 'outline.pdf'), path.join(SHELF_B, 'outline.pdf'));
+    await js(`api.saveSettings(${JSON.stringify({ shelfDirs: [SHELF_A, SHELF_B] })}).then(() => true)`);
+    win.webContents.reload();
+    await sleep(500);
+    check('书架列出多个文件夹', await waitFor(`(() => { const ns = [...document.querySelectorAll('.shelf-name')].map((n) => n.textContent); return ns.some((t) => t.includes('武侠')) && ns.some((t) => t.includes('资料')); })()`, 15000));
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('资料')); if (r) r.click(); return true; })()`);
+    await sleep(400);
+    check('进入文件夹列出 PDF', await js(`[...document.querySelectorAll('.shelf-name')].some((n) => n.textContent.includes('outline.pdf'))`));
+    await js(`(() => { document.querySelector('#btn-shelf-up').click(); return true; })()`);
+    await sleep(400);
+    check('从书架文件夹返回书架根', await js(`[...document.querySelectorAll('.shelf-name')].some((n) => n.textContent.includes('武侠'))`));
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('资料') && x.querySelector('.btn.tiny')); if (r) r.querySelector('.btn.tiny').click(); return true; })()`);
+    await sleep(400);
+    check('书架文件夹可移除', await js(`![...document.querySelectorAll('.shelf-name')].some((n) => n.textContent.includes('资料')) && [...document.querySelectorAll('.shelf-name')].some((n) => n.textContent.includes('武侠'))`));
+    check('移除持久化到设置', await js(`api.getState().then((s) => (s.settings.shelfDirs ?? []).length === 1)`));
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('武侠')); if (r) r.click(); return true; })()`);
+    await sleep(400);
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('novel-gbk.txt')); if (r) r.click(); return true; })()`);
+    check('点击书架文件可打开阅读', await waitFor(`document.body.classList.contains('has-file')`), await text('#file-name'));
+    check('阅读时显示返回书架按钮', await js(`getComputedStyle(document.querySelector('#btn-back-shelf')).display !== 'none'`));
+    await js(`(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true; })()`);
+    await sleep(400);
+    check('Esc 返回书架回欢迎页', await js(`!document.body.classList.contains('has-file') && document.querySelectorAll('#shelf-list .shelf-row').length > 0`));
+    await js(`(() => { document.querySelector('#recent-list .recent-item')?.click(); return true; })()`);
+    await waitFor(`document.body.classList.contains('has-file')`);
+    await click('#btn-toc', 300);
+    await js(`(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true; })()`);
+    await sleep(200);
+    check('Esc 先关面板不退出阅读', await js(`document.querySelector('#toc').hidden && document.body.classList.contains('has-file')`));
+    await js(`(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true; })()`);
+    await sleep(400);
+    check('再按 Esc 返回书架', await js(`!document.body.classList.contains('has-file')`));
+
+    /* ---------- 场景 19.5：书架增强（根视图信息 / 继续阅读排序 / 右键命令链路） ---------- */
+    check('根视图显示书本数与最近在读', await waitFor(`(() => { const m = document.querySelector('#shelf-list .shelf-row .shelf-meta')?.textContent ?? ''; return /\\d+ 本/.test(m) && m.includes('novel-gbk.txt') && m.includes('%'); })()`, 5000), await js(`document.querySelector('#shelf-list .shelf-row .shelf-meta')?.textContent ?? ''`));
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('武侠')); r.click(); return true; })()`);
+    await sleep(400);
+    check('目录内已读文件排在未读前', await js(`(() => { const n = [...document.querySelectorAll('.shelf-name')].map((x) => x.textContent.trim()); const gi = n.findIndex((t) => t.includes('novel-gbk.txt')); const ui = n.findIndex((t) => t.includes('aaa-未读.txt')); return gi === 0 && ui === 1; })()`), await js(`[...document.querySelectorAll('.shelf-name')].map((x) => x.textContent.trim()).join(' | ')`));
+    await js(`(() => { document.querySelector('#btn-shelf-up').click(); return true; })()`);
+    await sleep(400);
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('武侠')); r.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 })); return true; })()`);
+    await sleep(300);
+    check('右键选中态带目标信息', await js(`(() => { const r = document.querySelector('.shelf-row.ctx'); return !!r && r.dataset.type === 'dir-root' && r.dataset.path.endsWith('武侠'); })()`));
+    win.webContents.send('command', 'shelf-refresh'); // 等效点菜单「刷新该目录」：走主进程→渲染端完整命令链路
+    await sleep(500);
+    check('菜单命令刷新根视图并清选中态', await js(`!document.querySelector('.shelf-row.ctx') && document.querySelectorAll('#shelf-list .shelf-row').length === 1`));
+    await js(`(() => { const r = [...document.querySelectorAll('.shelf-row')].find((x) => x.textContent.includes('武侠')); r.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 })); return true; })()`);
+    await sleep(200);
+    win.webContents.send('command', 'shelf-remove'); // 等效点菜单「从书架移除」
+    await sleep(500);
+    check('菜单命令移除书架文件夹', await js(`document.querySelectorAll('#shelf-list .shelf-row').length === 0 && (document.querySelector('#shelf-list .muted')?.textContent ?? '').includes('书架空空如也')`));
+    check('移除经菜单同样持久化', await js(`api.getState().then((s) => (s.settings.shelfDirs ?? []).length === 0)`));
+    check('scanShelf 判别器（拖目录分支谓词）', await js(`api.scanShelf(${JSON.stringify(SHELF_A)}).then((r) => !r.error)`));
   } catch (err) {
     check('冒烟测试异常', false, String(err?.stack ?? err));
   } finally {

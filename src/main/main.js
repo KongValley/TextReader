@@ -91,8 +91,12 @@ function createWindow() {
     minWidth: 720,
     minHeight: 520,
     show: false,
+    autoHideMenuBar: true, // 隐藏标题栏后菜单栏改为 Alt 呼出
+    alwaysOnTop: store.settings?.alwaysOnTop === true,
     title: 'TXT 阅读器',
     backgroundColor: '#f6ecd8',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#f6ecd8', symbolColor: '#5b4636', height: 36 },
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.cjs'),
       contextIsolation: true,
@@ -355,13 +359,14 @@ function registerIpc() {
 
   ipcMain.handle('state:get', () => ({
     settings: store.settings,
-    recent: store.recent,
+    recent: store.recent.map((r) => ({ ...r, percent: store.getBook(r.path)?.percent ?? 0 })),
     encodings: ENCODINGS,
   }));
 
   ipcMain.handle('state:settings', (_e, patch) => {
     if (patch && typeof patch === 'object') {
       store.patchSettings(patch);
+      if ('alwaysOnTop' in patch) mainWindow?.setAlwaysOnTop(patch.alwaysOnTop === true);
       refreshMenu();
     }
     return store.settings;
@@ -369,11 +374,12 @@ function registerIpc() {
 
   const saveProgress = (filePath, progress) => {
     if (typeof filePath !== 'string' || !filePath || !progress || typeof progress !== 'object') return;
-    const { chapterIndex, ratio, percent } = progress;
+    const { chapterIndex, ratio, percent, readMsDelta } = progress;
     store.setBook(filePath, {
       chapterIndex: Number.isFinite(chapterIndex) ? chapterIndex : 0,
       ratio: Number.isFinite(ratio) ? ratio : 0,
       percent: Number.isFinite(percent) ? percent : 0,
+      readMs: (store.getBook(filePath)?.readMs ?? 0) + (Number(readMsDelta) || 0),
     });
   };
   ipcMain.on('state:progress', (_e, filePath, progress) => saveProgress(filePath, progress));
@@ -382,6 +388,111 @@ function registerIpc() {
   ipcMain.handle('state:bookmarks', (_e, filePath, list) => {
     if (typeof filePath !== 'string' || !filePath || !Array.isArray(list)) return null;
     return store.setBook(filePath, { bookmarks: list.slice(-200) });
+  });
+
+  ipcMain.handle('state:highlights', (_e, filePath, list) => {
+    if (typeof filePath !== 'string' || !filePath || !Array.isArray(list)) return null;
+    return store.setBook(filePath, { highlights: list.slice(-200) });
+  });
+
+  ipcMain.handle('shelf:pick', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '添加文件夹到书架（可多选）',
+      properties: ['openDirectory', 'multiSelections'],
+    });
+    return r.canceled ? [] : r.filePaths;
+  });
+
+  ipcMain.handle('shelf:scan', (_e, dir) => {
+    if (typeof dir !== 'string' || !dir) return { error: '无效目录' };
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const dirs = [];
+      const files = [];
+      for (const e of entries) {
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const fp = path.join(dir, e.name);
+        if (e.isDirectory()) dirs.push({ name: e.name, path: fp });
+        else if (e.isFile() && /\.(txt|pdf)$/i.test(e.name)) {
+          let size = 0;
+          try {
+            size = fs.statSync(fp).size;
+          } catch {
+            /* 竞态消失的文件按 0 计 */
+          }
+          const b = store.getBook(fp);
+          files.push({ name: e.name, path: fp, size, percent: b.percent, updatedAt: b.updatedAt });
+        }
+      }
+      const byName = (a, b) => a.name.localeCompare(b.name, 'zh');
+      const byReading = (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || byName(a, b);
+      return { dir, dirs: dirs.sort(byName), files: files.sort(byReading) };
+    } catch {
+      return { error: '无法读取该目录' };
+    }
+  });
+
+  // 根视图联查：每个书架文件夹的直接子文件里，读过(updatedAt>0)的按 updatedAt 取最大那本
+  ipcMain.handle('shelf:stat', (_e, dirs) => {
+    const out = {};
+    if (!Array.isArray(dirs)) return out;
+    for (const dir of dirs) {
+      if (typeof dir !== 'string' || !dir) continue;
+      let count = 0;
+      let last = null; // { name, percent, updatedAt }
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isFile() && /\.(txt|pdf)$/i.test(e.name)) {
+            count += 1;
+            const b = store.getBook(path.join(dir, e.name));
+            if (b.updatedAt > 0 && (!last || b.updatedAt > last.updatedAt))
+              last = { name: e.name, percent: b.percent, updatedAt: b.updatedAt };
+          }
+        }
+      } catch {
+        /* 目录已被删除：不写入 out，渲染端按「文件夹失效」提示 */
+        continue;
+      }
+      out[dir] = { count, last };
+    }
+    return out;
+  });
+
+  ipcMain.on('set-titlebar', (_e, c) => {
+    if (!mainWindow || !c?.color) return;
+    updateLogMarkers.push(`set-titlebar ${c.color}`); // 冒烟可观测：颜色同步链路
+    try {
+      mainWindow.setTitleBarOverlay({ color: c.color, symbolColor: c.symbolColor ?? '#5b4636' });
+    } catch {
+      /* 旧系统不支持时保持默认 */
+    }
+  });
+
+  ipcMain.on('context-menu', (_e, p) => {
+    if (!mainWindow || !p || typeof p !== 'object') return;
+    if (p.shelf) {
+      // 书架行菜单：目标行由渲染端 .ctx 选中态定位，命令回推后由渲染端读 dataset 执行
+      const tpl = [
+        { label: '在资源管理器中显示', click: () => sendCommand('shelf-reveal') },
+        { label: '刷新该目录', click: () => sendCommand('shelf-refresh') },
+        { type: 'separator' },
+        { label: '从书架移除', click: () => sendCommand('shelf-remove') },
+      ];
+      Menu.buildFromTemplate(tpl).popup({ window: mainWindow, x: Math.round(p.x), y: Math.round(p.y) });
+      return;
+    }
+    const tpl = [];
+    const hasSel = !!p.hasSelection;
+    if (p.editable || hasSel) tpl.push({ role: 'copy', label: '复制', enabled: hasSel || !!p.editable });
+    if (p.editable) {
+      tpl.push({ role: 'cut', label: '剪切', enabled: hasSel }, { role: 'paste', label: '粘贴' });
+    }
+    if (p.mark) tpl.push({ label: '划线', click: () => sendCommand('mark-add') });
+    if (p.hlId) tpl.push({ label: '取消划线', click: () => sendCommand('mark-remove', p.hlId) });
+    if (tpl.length) tpl.push({ type: 'separator' });
+    tpl.push({ role: 'selectAll', label: '全选' });
+    Menu.buildFromTemplate(tpl).popup({ window: mainWindow, x: Math.round(p.x), y: Math.round(p.y) });
   });
 
   ipcMain.handle('state:remove-recent', (_e, filePath) => {

@@ -15,6 +15,7 @@
         <div class="tb-group">
           <button id="btn-open" class="btn primary" title="打开 TXT（Ctrl+O）">打开</button>
           <button id="btn-toc" class="btn" title="目录（Ctrl+T）">目录</button>
+          <button id="btn-marks" class="btn" title="划线（Ctrl+H 划选中文本）">划线</button>
           <button id="btn-bookmarks" class="btn" title="书签列表（Ctrl+B 收藏当前页）">书签</button>
         </div>
         <div id="file-info">
@@ -22,6 +23,7 @@
           <span id="enc-label" class="tag" hidden></span>
         </div>
         <div class="tb-group">
+          <button id="btn-back-shelf" class="btn" title="返回书架（Esc）">书架</button>
           <div id="search-box">
             <input id="search-input" type="search" placeholder="查找全文（Ctrl+F）" spellcheck="false" autocomplete="off" />
             <span id="search-count" class="muted"></span>
@@ -147,9 +149,19 @@
               <input id="set-content-width" type="range" min="480" max="1400" step="20" />
             </label>
 
+            <label class="field" data-text-only>
+              <span class="field-label">自动阅读速度 <b id="auto-speed-val"></b></span>
+              <input id="set-auto-speed" type="range" min="20" max="200" step="10" />
+            </label>
+
             <label class="field row" data-text-only>
               <span class="field-label">两端对齐</span>
               <input id="set-justify" type="checkbox" />
+            </label>
+
+            <label class="field row">
+              <span class="field-label">久坐提醒</span>
+              <input id="set-rest" type="checkbox" title="连续阅读 45 分钟提示休息" />
             </label>
 
             <hr data-text-only />
@@ -184,8 +196,10 @@
                 <li><kbd>Ctrl</kbd>+<kbd>PageUp/PageDown</kbd> 上/下一章（PDF 为上/下一页）</li>
                 <li><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> TXT 字号 / PDF 缩放</li>
                 <li><kbd>Ctrl</kbd>+<kbd>0</kbd> PDF 适应窗口</li>
+                <li><kbd>Ctrl</kbd>+滚轮 TXT 字号 / PDF 缩放</li>
+                <li><kbd>Alt</kbd>+<kbd>←</kbd> 返回上次跳转前位置</li>
                 <li><kbd>Enter</kbd> / <kbd>Esc</kbd> 密码框：解锁 / 取消</li>
-                <li><kbd>F11</kbd> 全屏，<kbd>Esc</kbd> 关闭面板</li>
+                <li><kbd>F11</kbd> 全屏，<kbd>Esc</kbd> 关闭面板；阅读中再按返回书架</li>
               </ul>
             </div>
           </div>
@@ -203,11 +217,28 @@
           <div id="bookmark-list" class="scroll-y"></div>
         </aside>
 
+        <aside id="marks" class="drawer right" hidden>
+          <div class="drawer-head">
+            <span>划线</span>
+            <button class="btn tiny" data-close="marks" title="关闭">×</button>
+          </div>
+          <div id="mark-list" class="scroll-y"></div>
+        </aside>
+
         <div id="welcome">
           <div class="welcome-card">
             <h1>TXT 阅读器</h1>
             <p class="muted">拖拽 txt / pdf 文件到窗口，或</p>
             <button id="btn-open-2" class="btn primary big">打开本地文本 / PDF</button>
+            <div id="shelf-block">
+              <h3>书架</h3>
+              <div id="shelf-bar">
+                <button id="btn-shelf-add" class="btn tiny">添加文件夹</button>
+                <button id="btn-shelf-up" class="btn tiny" hidden>返回上级</button>
+                <button id="btn-shelf-refresh" class="btn tiny" hidden>刷新</button>
+              </div>
+              <div id="shelf-list"></div>
+            </div>
             <div id="recent-block">
               <h3>最近阅读</h3>
               <div id="recent-list"></div>
