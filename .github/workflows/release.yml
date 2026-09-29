@@ -1,0 +1,77 @@
+name: Release
+
+# 打 tag 推送（如 v1.3.0）→ GitHub 服务器上打包并发布 Release（含 latest.yml，应用内更新可直接用）。
+# 手动触发（workflow_dispatch）→ 只打包，产物作为 workflow artifact 下载，不发 Release。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache electron / electron-builder 二进制
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ hashFiles('package-lock.json') }}
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: 校验 package.json 版本与 tag 一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          tag=${GITHUB_REF_NAME#v}
+          if [ "$pkg" != "$tag" ]; then
+            echo "::error::package.json 版本 $pkg 与 tag $tag 不一致，请先改版本再打 tag"
+            exit 1
+          fi
+
+      - name: Build（NSIS 安装包 + 便携版）
+        run: npm run dist
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          V="${TAG#v}"
+          ASSETS="dist/TXTReader-$V-setup.exe dist/TXTReader-$V-setup.exe.blockmap dist/TXTReader-$V-portable.exe dist/latest.yml"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $ASSETS --clobber
+          else
+            gh release create "$TAG" --title "TXT 阅读器 $TAG" --generate-notes $ASSETS
+          fi
+          gh release view "$TAG" --json tagName,isDraft --jq '{tagName, isDraft}'
+
+      - name: Upload artifact（手动触发时）
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TXTReader-windows
+          path: |
+            dist/*.exe
+            dist/latest.yml
+          retention-days: 7
