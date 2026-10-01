@@ -2,7 +2,7 @@
 
 本项目的所有重要变更都记录在此文件，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [1.4.0] - 2026-10-01
 
 ### 新增
 
@@ -57,6 +57,7 @@
 - 首个正式版本：TXT 阅读——编码自动识别（GB18030/GBK、Big5、UTF-8、UTF-16）、章节切分与可跳转目录、翻页（CSS 多列）/ 滚动两种模式、阅读设置（字体 / 字号 / 行距 / 字距 / 版心 / 对齐 / 主题）、书签与全文查找、进度记忆与「同名同大小继承」。
 - PDF 阅读：内置 pdf.js 原样渲染（缩放 50%–300% 与适应窗口、大纲目录、文本层选中复制、跨页查找与高亮框、书签、加密 PDF 密码解锁）。
 
+[1.4.0]: https://github.com/KongValley/TextReader/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/KongValley/TextReader/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/KongValley/TextReader/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/KongValley/TextReader/compare/v1.1.0...v1.2.0
