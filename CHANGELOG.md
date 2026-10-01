@@ -2,6 +2,18 @@
 
 本项目的所有重要变更都记录在此文件，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- EPUB 阅读：`Ctrl+O` / 拖拽 / 命令行 / 书架均可打开 `.epub`。主进程零新依赖解析（`node:zlib.inflateRawSync` 解 ZIP + 自写 XML tokenizer），按 spine 抽取正文并按目录生成章节表——目录取 EPUB3 `nav`，无效时回退 NCX，再无则用 TXT 同款标题识别兜底；`#锚点` 精确章节定位、同偏移去重、标题行去重。解析结果与 TXT 同构（`text` + `chapters`），主题/字体/字号/版心/划线/书签/查找/进度记忆/自动阅读全部自动生效；不被目录引用的封面页、导航页不进入正文。
+- EPUB 打开后工具栏显示 `EPUB` 标记，「设置」里的编码选择对 EPUB 隐藏（其余文本设置保留）；关于对话框、欢迎页、书架文案同步说明 EPUB。
+
+### 工程
+
+- `src/shared/chapters.js` 抽出 `splitLongChapters`（TXT 与 EPUB 共用的超长章再切分），行为与原内联实现一致。
+- 新增 `test/epub.test.js`（10 项）、`scripts/epub-fixtures.mjs`（手写 ZIP 样本）与 4 个 fixture；冒烟新增场景 11b（打开、目录、段落渲染、状态栏、翻页、查找、书签、进度记忆、损坏报错）与截图 `30-epub.png` / `31-epub-reopen.png`。
+
 ## [1.3.1] - 2026-09-29
 
 ### 文档

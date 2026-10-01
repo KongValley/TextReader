@@ -762,6 +762,10 @@ body:not([data-kind="pdf"]) [data-pdf-only] {
 body[data-kind="pdf"] [data-text-only] {
   display: none;
 }
+/* EPUB 是重排文本流：字体/字号/版心等 [data-text-only] 全部保留，只有编码选择无意义 */
+body[data-kind="epub"] [data-encoding-only] {
+  display: none;
+}
 .tag[data-pdf="1"] {
   background: var(--accent);
   color: var(--accent-fg);

@@ -67,6 +67,29 @@ function chunkRanges(text, from, to, size) {
 }
 
 /**
+ * 把超长章按 maxChapter 再切分（TXT 标题章与 EPUB TOC 章共用）。
+ * @param {string} text 归一化后的全文
+ * @param {{title:string,start:number,bodyStart:number,end:number}[]} chapters
+ * @param {{maxChapter?:number}} [opts]
+ */
+export function splitLongChapters(text, chapters, { maxChapter = MAX_CHAPTER_CHARS } = {}) {
+  const out = [];
+  for (const h of chapters) {
+    if (h.end - h.bodyStart > maxChapter) {
+      const ranges = chunkRanges(text, h.bodyStart, h.end, maxChapter);
+      ranges.forEach((r, k) =>
+        out.push({
+          title: `${h.title}（${k + 1}/${ranges.length}）`,
+          start: k === 0 ? h.start : r.bodyStart,
+          bodyStart: r.bodyStart,
+          end: r.end,
+        }));
+    } else out.push(h);
+  }
+  return out;
+}
+
+/**
  * @param {string} text 归一化后的全文
  * @param {{chunkSize?:number, maxChapter?:number}} [opts]
  */
@@ -116,25 +139,12 @@ export function splitChapters(text, { chunkSize = DEFAULT_CHUNK, maxChapter = MA
     }
   }
 
-  // 4) 每个标题到下一个标题之间为一章；过长的章再切分
+  // 4) 每个标题到下一个标题之间为一章；过长的章统一走 splitLongChapters 再切分
   for (let i = 0; i < heads.length; i++) {
     const h = heads[i];
     const end = i + 1 < heads.length ? heads[i + 1].start : len;
-    const bodyStart = Math.min(h.bodyStart, end);
-    if (end - bodyStart > maxChapter) {
-      const ranges = chunkRanges(text, bodyStart, end, maxChapter);
-      ranges.forEach((r, k) => {
-        chapters.push({
-          title: `${h.title}（${k + 1}/${ranges.length}）`,
-          start: k === 0 ? h.start : r.bodyStart,
-          bodyStart: r.bodyStart,
-          end: r.end,
-        });
-      });
-    } else {
-      chapters.push({ title: h.title, start: h.start, bodyStart, end });
-    }
+    chapters.push({ title: h.title, start: h.start, bodyStart: Math.min(h.bodyStart, end), end });
   }
 
-  return chapters;
+  return splitLongChapters(text, chapters, { maxChapter });
 }

@@ -15,6 +15,7 @@ const BASE = path.join(DIR, 'novel-utf8.txt');
 const base = fs.readFileSync(BASE, 'utf8');
 
 import { LOCKED_PDF_PASSWORD, buildLockedPdf, buildOutlinePdf } from './pdf-fixtures.mjs';
+import { buildAnchoredEpub, buildNcxEpub, buildNoTocEpub, buildOutlineEpub } from './epub-fixtures.mjs';
 
 function ps(fromFile, toFile, encodingName) {
   const script =
@@ -68,6 +69,12 @@ fs.writeFileSync(path.join(DIR, 'outline.pdf'), Buffer.from(buildOutlinePdf(), '
 //    同一份内容 + Standard 安全处理器（RC4 40bit）：用于验证密码输入链路
 //    密码：LOCKED_PDF_PASSWORD（scripts/pdf-fixtures.mjs）
 fs.writeFileSync(path.join(DIR, 'locked.pdf'), Buffer.from(buildLockedPdf(), 'latin1'));
+
+// 7) EPUB 样本（手写 ZIP + XHTML）：nav 目录 / NCX 回退 / 锚点去重 / 无目录兜底
+fs.writeFileSync(path.join(DIR, 'outline.epub'), buildOutlineEpub());
+fs.writeFileSync(path.join(DIR, 'outline-ncx.epub'), buildNcxEpub());
+fs.writeFileSync(path.join(DIR, 'anchored.epub'), buildAnchoredEpub());
+fs.writeFileSync(path.join(DIR, 'no-toc.epub'), buildNoTocEpub());
 
 const sizes = fs
   .readdirSync(DIR)

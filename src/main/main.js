@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import updaterPkg from 'electron-updater';
 import { ENCODINGS, decodeBuffer } from './encoding.js';
+import { isEpubPath, readEpubFile } from './epub.js';
 import { listSystemFonts } from './fonts.js';
 import { buildMenu } from './menu.js';
 import { isPdfPath, readPdfFile } from './pdf.js';
@@ -292,7 +293,11 @@ async function readBook(filePath, encoding) {
 
 async function safeRead(filePath, encoding) {
   try {
-    const payload = isPdfPath(filePath) ? await readPdfFile(filePath, { store }) : await readBook(filePath, encoding);
+    const payload = isPdfPath(filePath)
+      ? await readPdfFile(filePath, { store })
+      : isEpubPath(filePath)
+        ? await readEpubFile(filePath, { store })
+        : await readBook(filePath, encoding);
     activeKind = payload.kind;
     refreshMenu();
     return payload;
@@ -333,10 +338,10 @@ function fileFromArgv(argv) {
 function registerIpc() {
   ipcMain.handle('file:open-dialog', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
-      title: '打开 文本 / PDF',
+      title: '打开 文本 / PDF / EPUB',
       properties: ['openFile'],
       filters: [
-        { name: '文本 / PDF', extensions: ['txt', 'text', 'log', 'md', 'pdf'] },
+        { name: '文本 / PDF / EPUB', extensions: ['txt', 'text', 'log', 'md', 'pdf', 'epub'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });
@@ -413,7 +418,7 @@ function registerIpc() {
         if (e.name.startsWith('.') || e.name === 'node_modules') continue;
         const fp = path.join(dir, e.name);
         if (e.isDirectory()) dirs.push({ name: e.name, path: fp });
-        else if (e.isFile() && /\.(txt|pdf)$/i.test(e.name)) {
+        else if (e.isFile() && /\.(txt|pdf|epub)$/i.test(e.name)) {
           let size = 0;
           try {
             size = fs.statSync(fp).size;
@@ -443,7 +448,7 @@ function registerIpc() {
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const e of entries) {
-          if (e.isFile() && /\.(txt|pdf)$/i.test(e.name)) {
+          if (e.isFile() && /\.(txt|pdf|epub)$/i.test(e.name)) {
             count += 1;
             const b = store.getBook(path.join(dir, e.name));
             if (b.updatedAt > 0 && (!last || b.updatedAt > last.updatedAt))

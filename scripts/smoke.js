@@ -492,6 +492,76 @@ export async function runSmoke(ctx) {
       await shot('22-pdf-real-search.png');
     }
 
+    /* ---------- 场景 11b：EPUB（手写 ZIP + nav 目录，走重排文本链路） ---------- */
+    const epubOutline = path.join(FIXTURES, 'outline.epub');
+    if (fs.existsSync(epubOutline)) {
+      check('打开 EPUB', await openAndWait(epubOutline, `document.querySelector('#file-name').textContent.includes('outline.epub')`), epubOutline);
+      await sleep(1200);
+
+      check('工具栏出现 EPUB 标记', (await text('#enc-label')) === 'EPUB', await text('#enc-label'));
+      check('body 标记为 epub（编码选择隐藏）', (await attr('body', 'kind')) === 'epub', await attr('body', 'kind'));
+      check('文本流已显示、PDF 容器隐藏', await js(`!document.querySelector('#flow').hidden && document.querySelector('#pdf-pages').hidden`));
+      check('编码选择在 EPUB 下隐藏', await js(`getComputedStyle(document.querySelector('#set-encoding').closest('label')).display === 'none'`));
+      check('字体设置等文本项保留', await js(`getComputedStyle(document.querySelector('#set-font-family').closest('label')).display !== 'none'`));
+
+      check('目录来自 EPUB TOC', (await text('#toc-count')) === '3 章', await text('#toc-count'));
+      await click('#btn-toc', 350);
+      check('目录首项为书名页', (await text('#toc-list .toc-item')).includes('书名'), await text('#toc-list .toc-item'));
+      check('目录跳转到第二章', await (async () => {
+        await click('.toc-item[data-i="1"]', 900);
+        return (await text('#status-chapter')).includes('第一章 起点');
+      })(), await text('#status-chapter'));
+      await click('#toc [data-close]', 250);
+
+      const paraCount = await js(`document.querySelectorAll('#flow p').length`);
+      check('正文已按段落渲染', paraCount > 0, `${paraCount} 段`);
+      check('正文含第一章标记串', await js(`document.querySelector('#flow').textContent.includes('MARKER-ONE')`));
+      check('导航页文字未混入正文', !(await js(`document.querySelector('#flow').textContent.includes('目录导航页')`)));
+
+      check('状态栏显示章节进度', /第\s*\d\/3\s*章/.test(await text('#status-meta')), await text('#status-meta'));
+      check('状态栏带 EPUB 标记', (await text('#status-meta')).includes('EPUB'), await text('#status-meta'));
+
+      const epPages = Number(await attr('#viewport', 'pages'));
+      check('分页引擎已就绪', epPages >= 1, `${epPages} 页`);
+      const ep0 = Number(await attr('#viewport', 'page'));
+      await key('Right');
+      await sleep(600);
+      const ep1 = Number(await attr('#viewport', 'page'));
+      check('翻页生效（page 不越界）', ep1 === Math.min(ep0 + 1, epPages - 1) && ep1 >= 0, `${ep0} → ${ep1}（共 ${epPages} 页）`);
+      await shot('30-epub.png');
+
+      await search('MARKER');
+      check('全文查找命中两处', /2\/2\s*处|2\s*处/.test(await text('#search-count')), await text('#search-count'));
+
+      await click('#btn-add-bookmark', 1000);
+      check('书签可用', (await js(`document.querySelectorAll('#bookmark-list .bm-row').length`)) >= 1, `${await js(`document.querySelectorAll('#bookmark-list .bm-row').length`)} 条`);
+      await click('#btn-bookmarks', 250);
+      await click('#bookmarks [data-close]', 200);
+
+      /* 进度记忆：回到书架再打开 */
+      await key('Escape');
+      await sleep(700);
+      check('返回书架后欢迎页可见', await js(`getComputedStyle(document.querySelector('#welcome')).display !== 'none'`));
+      check('书架/重开后 EPUB 仍在最近列表', (await text('#recent-list')).includes('outline.epub'), await text('#recent-list'));
+      check('重新打开 EPUB 恢复位置', await openAndWait(epubOutline, `document.querySelector('#file-name').textContent.includes('outline.epub')`));
+      await sleep(900);
+      check('恢复提示章号与状态栏一致', /已恢复到上次位置（第 [23] 章/.test(await text('#toast')), await text('#toast'));
+      check('重开后页码记忆', Number(await attr('#viewport', 'page')) === ep1, `${ep1} → ${await attr('#viewport', 'page')}`);
+      // 查找 MARKER 后位置已被推到第二章（MARKER-TWO），重开必须落回同一章而不是跑回起点
+      const restoredChapter = (await text('#status-chapter')).trim();
+      check('重开回到查找后的所在章', restoredChapter === '第二章 转折', `恢复为：${restoredChapter}`);
+      check('重开后状态栏仍带 EPUB', /第 [23]\/3 章/.test(await text('#status-meta')), await text('#status-meta'));
+      await shot('31-epub-reopen.png');
+
+      /* 损坏的 EPUB：明确报错且不影响当前文档 */
+      const brokenEpub = path.join(SHOTS, 'userdata', 'broken.epub');
+      fs.writeFileSync(brokenEpub, 'this is definitely not a zip file at all');
+      openFile(brokenEpub);
+      check('损坏 EPUB 给出明确报错', await waitFor(`document.querySelector('#toast').textContent.includes('EPUB 无法解析')`, 15000), await text('#toast'));
+      await sleep(600);
+      check('报错后当前 EPUB 文档不受影响', (await text('#file-name')).includes('outline.epub'), await text('#file-name'));
+    }
+
     /* ---------- 场景 12：加密 PDF 的密码输入 ---------- */
     const lockedPdf = path.join(FIXTURES, 'locked.pdf');
     const brokenPdf = path.join(SHOTS, 'userdata', 'broken.pdf');

@@ -13,7 +13,7 @@
     <div id="app">
       <header id="toolbar">
         <div class="tb-group">
-          <button id="btn-open" class="btn primary" title="打开 TXT（Ctrl+O）">打开</button>
+          <button id="btn-open" class="btn primary" title="打开 文本 / PDF / EPUB（Ctrl+O）">打开</button>
           <button id="btn-toc" class="btn" title="目录（Ctrl+T）">目录</button>
           <button id="btn-marks" class="btn" title="划线（Ctrl+H 划选中文本）">划线</button>
           <button id="btn-bookmarks" class="btn" title="书签列表（Ctrl+B 收藏当前页）">书签</button>
@@ -166,11 +166,11 @@
 
             <hr data-text-only />
 
-            <label class="field" data-text-only>
+            <label class="field" data-encoding-only>
               <span class="field-label">文本编码</span>
               <select id="set-encoding"></select>
             </label>
-            <div class="btn-row" data-text-only>
+            <div class="btn-row" data-encoding-only>
               <button id="btn-reload" class="btn">按此编码重新加载</button>
             </div>
 
@@ -185,7 +185,7 @@
             <div id="usage" class="shortcuts" hidden>
               <h4>使用说明</h4>
               <ul>
-                <li><b>打开与书架</b>：拖文件进窗口、<kbd>Ctrl</kbd>+<kbd>O</kbd> 或菜单「文件」打开；把小说文件夹拖进窗口即加入书架，书架根视图右键可显示 / 刷新 / 移除文件夹；点书名开始阅读，阅读中按工具栏「书架」按钮或 <kbd>Esc</kbd> 返回书架。</li>
+                <li><b>打开与书架</b>：拖文件进窗口、<kbd>Ctrl</kbd>+<kbd>O</kbd> 或菜单「文件」打开（txt / pdf / epub）；EPUB 按书中目录转成可排版文本流，主题、字体、书签、划线、查找、进度记忆与 TXT 完全一致；把小说文件夹拖进窗口即加入书架，书架根视图右键可显示 / 刷新 / 移除文件夹；点书名开始阅读，阅读中按工具栏「书架」按钮或 <kbd>Esc</kbd> 返回书架。</li>
                 <li><b>目录与跳转</b>：<kbd>Ctrl</kbd>+<kbd>T</kbd> 开目录侧栏，点章节直达；书签 <kbd>Ctrl</kbd>+<kbd>B</kbd> 收藏当前页（列表内可 ✎ 重命名）；进度条可点击 / 拖动按全书比例直达，悬停可预览章节；<kbd>Alt</kbd>+<kbd>←</kbd> 回退上一次大跳转。</li>
                 <li><b>划线与查找</b>：选中文字 <kbd>Ctrl</kbd>+<kbd>H</kbd> 或右键「划线」，高亮随书保存；<kbd>Ctrl</kbd>+<kbd>F</kbd> 全文查找，<kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd> 下一处 / 上一处。</li>
                 <li><b>阅读模式</b>：翻页（<kbd>←</kbd> <kbd>→</kbd> / 空格 / 鼠标侧键）与滚动（滚到底自动进下一章）在设置里切换；<kbd>Ctrl</kbd>+滚轮 调字号（PDF 为缩放，<kbd>Ctrl</kbd>+<kbd>0</kbd> 适应窗口）。</li>
@@ -241,8 +241,8 @@
         <div id="welcome">
           <div class="welcome-card">
             <h1>TXT 阅读器</h1>
-            <p class="muted">拖拽 txt / pdf 文件到窗口，或</p>
-            <button id="btn-open-2" class="btn primary big">打开本地文本 / PDF</button>
+            <p class="muted">拖拽 txt / pdf / epub 文件到窗口，或</p>
+            <button id="btn-open-2" class="btn primary big">打开本地文本 / PDF / EPUB</button>
             <div id="shelf-block">
               <h3>书架</h3>
               <div id="shelf-bar">
@@ -256,7 +256,7 @@
               <h3>最近阅读</h3>
               <div id="recent-list"></div>
             </div>
-            <p class="muted small">文本支持 GB18030/GBK、Big5、UTF-8、UTF-16 自动识别；PDF 原样渲染</p>
+            <p class="muted small">文本支持 GB18030/GBK、Big5、UTF-8、UTF-16 自动识别；PDF 原样渲染；EPUB 按目录转成可排版文本流</p>
           </div>
         </div>
       </main>

@@ -70,7 +70,7 @@ const el = {
 };
 
 const state = {
-  kind: 'txt', // 'txt' | 'pdf'
+  kind: 'txt', // 'txt' | 'epub' | 'pdf'
   pdf: null, // PdfView 实例（kind === 'pdf' 时存在）
   page: 0, // PDF 当前页（0 基）
   pages: 0, // PDF 总页数
@@ -131,7 +131,7 @@ function toggleAutoRead() {
   } else {
     autoTimer = setInterval(() => {
       el.viewport.scrollBy({ top: Math.max(2, state.settings.autoScrollSpeed / 10) });
-      if (state.kind === 'txt' && atBottom()) nextChapter();
+      if (state.kind !== 'pdf' && atBottom()) nextChapter();
     }, 100);
   }
 }
@@ -319,16 +319,17 @@ async function openPayload(res) {
   }
   if (res.kind === 'pdf') return openPdf(res);
   closePdf();
-  state.kind = 'txt';
+  state.kind = res.kind; // 'txt' | 'epub'
   state.page = 0;
   state.pages = 0;
-  el.body.dataset.kind = 'txt';
+  el.body.dataset.kind = state.kind;
   el.flow.hidden = false;
 
   state.file = { path: res.path, name: res.name, size: res.size };
   state.text = res.text;
   jumpHistory.length = 0;
-  state.chapters = splitChapters(res.text);
+  // EPUB 的章节由主进程按 TOC/锚点算好（含兜底切分），txt 才在渲染端现场切
+  state.chapters = res.kind === 'epub' ? res.chapters : splitChapters(res.text);
   state.book = res.book ?? { chapterIndex: 0, ratio: 0, bookmarks: [] };
   state.encoding = res.encoding;
   state.wordCount = countChars(res.text);
@@ -340,11 +341,13 @@ async function openPayload(res) {
   el.body.classList.add('has-file');
   el.fileName.textContent = res.name;
   el.encLabel.hidden = false;
-  el.encLabel.textContent = res.encoding.toUpperCase();
+  el.encLabel.textContent = res.kind === 'epub' ? 'EPUB' : res.encoding.toUpperCase();
   el.encLabel.dataset.warn = res.warning ? '1' : '0';
   el.encLabel.dataset.pdf = '0';
-  el.encLabel.title = res.warning ? '存在无法解码的字符，可在“设置”里手动指定编码' : `编码：${res.encoding}`;
-  el.encSelect.value = res.encoding;
+  el.encLabel.title = res.kind === 'epub'
+    ? `EPUB · ${fmtBytes(res.size)}`
+    : res.warning ? '存在无法解码的字符，可在“设置”里手动指定编码' : `编码：${res.encoding}`;
+  if (res.kind !== 'epub') el.encSelect.value = res.encoding;
 
   renderToc();
   renderBookmarks();
@@ -932,7 +935,7 @@ function selectionToOffsets() {
 
 /** (x,y) 处的划线（右键「取消划线」用）；Chromium 的 caretRangeFromPoint 与新标准都兜上 */
 function highlightIdAtPoint(x, y) {
-  if (state.kind !== 'txt' || !state.text.length) return null;
+  if (state.kind === 'pdf' || !state.text.length) return null;
   const pos = document.caretRangeFromPoint?.(x, y) ?? document.caretPositionFromPoint?.(x, y);
   const node = pos?.startContainer ?? pos?.offsetNode;
   if (!node) return null;
@@ -966,7 +969,7 @@ function markRemove(id) {
 function renderHighlights() {
   try {
     window.CSS?.highlights?.delete('marks');
-    if (state.kind !== 'txt') return;
+    if (state.kind === 'pdf') return;
     const ranges = [];
     for (const h of state.book.highlights ?? []) {
       for (const p of state.paras) {
@@ -984,7 +987,7 @@ function renderHighlights() {
 }
 
 function renderMarks() {
-  const list = state.kind === 'txt' ? state.book.highlights ?? [] : [];
+  const list = state.kind !== 'pdf' ? state.book.highlights ?? [] : [];
   el.markList.replaceChildren();
   if (!list.length) {
     const p = document.createElement('p');
@@ -1406,7 +1409,7 @@ async function renderShelfRoot() {
   if (!list.length) {
     const p = document.createElement('p');
     p.className = 'muted small';
-    p.textContent = '书架空空如也，点「添加文件夹」把小说目录加进来（TXT / PDF）。';
+    p.textContent = '书架空空如也，点「添加文件夹」把小说目录加进来（TXT / PDF / EPUB）。';
     el.shelfList.replaceChildren(p);
     return;
   }
@@ -1480,7 +1483,7 @@ function renderShelf(res) {
   if (!res.dirs.length && !res.files.length) {
     const p = document.createElement('p');
     p.className = 'muted small';
-    p.textContent = '此目录没有 TXT / PDF 文件';
+    p.textContent = '此目录没有 TXT / PDF / EPUB 文件';
     el.shelfList.replaceChildren(p);
     return;
   }
@@ -1525,7 +1528,8 @@ function handleCommand(cmd, payload) {
         toast('PDF 原样渲染，无需按编码重新加载');
         break;
       }
-      if (state.file) openPath(state.file.path, el.encSelect.value);
+      // EPUB 由主进程按结构解析，没有编码参数；重开等于重新加载文件内容
+      if (state.file) openPath(state.file.path, state.kind === 'epub' ? null : el.encSelect.value);
       break;
     case 'reveal':
       if (state.file) api.reveal(state.file.path);
@@ -1834,8 +1838,8 @@ function bindUI() {
     const sel = window.getSelection();
     const hasSelection = !!sel && !sel.isCollapsed;
     const editable = !!e.target.closest('input, textarea');
-    const mark = state.kind === 'txt' && hasSelection ? selectionToOffsets() : null;
-    const hit = state.kind === 'txt' ? highlightIdAtPoint(e.clientX, e.clientY) : null;
+    const mark = state.kind !== 'pdf' && hasSelection ? selectionToOffsets() : null;
+    const hit = state.kind !== 'pdf' ? highlightIdAtPoint(e.clientX, e.clientY) : null;
     api.showContextMenu({ x: e.clientX, y: e.clientY, hasSelection, editable, mark, hlId: hit?.id ?? null });
   });
 

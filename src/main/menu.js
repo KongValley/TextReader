@@ -19,7 +19,7 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
     {
       label: '文件',
       submenu: [
-        { label: '打开 文本 / PDF…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        { label: '打开 文本 / PDF / EPUB…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
         { label: '重新加载', accelerator: 'CmdOrCtrl+R', enabled: !isPdf, click: () => send('reload') },
         { label: '最近打开', submenu: recentSubmenu },
         { type: 'separator' },
@@ -99,10 +99,11 @@ export function buildMenu({ getSettings, getRecent, getWindow, getActiveKind, se
               title: '关于',
               message: `TXT 阅读器 ${app.getVersion()}`,
               detail:
-                '本地 TXT / PDF 阅读器\n' +
+                '本地 TXT / PDF / EPUB 阅读器\n' +
                 '· 自动识别 GB18030/GBK、Big5、UTF-8、UTF-16 编码\n' +
                 '· 章节目录、书签、全文查找（PDF 走大纲与页号）\n' +
                 '· PDF 原样渲染（pdf.js），缩放 50%–300%\n' +
+                '· EPUB 按目录转成文本流，排版/书签/划线/查找全支持\n' +
                 '· 翻页/滚动两种模式，阅读进度自动记忆',
               buttons: ['好'],
             });
